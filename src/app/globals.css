@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+/* Tokens del diseño: naranja, crema, verde y negro, con efecto vidrio. */
+@theme {
+  --color-ink: #1a1a1a;
+  --color-muted: #6a6157;
+  --color-subtle: #85796c;
+  --color-cream: #fff7ee;
+  --color-cream-200: #ffecd8;
+  --color-orange: #ffad57;
+  --color-orange-200: #ffe3c4;
+  --color-orange-800: #8a4300;
+  --color-green: #59d185;
+  --color-green-200: #d6f5e3;
+  --color-green-800: #17663c;
+  --color-danger: #b3401a;
+
+  --font-sans: var(--font-nunito), system-ui, sans-serif;
+
+  --radius-card: 24px;
+  --shadow-soft: 0 10px 30px rgba(140, 90, 30, 0.08);
+  --shadow-lift: 0 10px 24px rgba(26, 26, 26, 0.22);
+}
+
+@utility glass {
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(22px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: var(--shadow-soft);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+html {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a {
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    background-color 0.25s ease,
+    color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+button:active:not(:disabled),
+a.pressable:active {
+  transform: scale(0.96);
+}
+
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-orange) !important;
+  box-shadow: 0 0 0 4px rgba(255, 173, 87, 0.25);
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+/* ---------- Animaciones propias ---------- */
+@keyframes pop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes toast {
+  0% { opacity: 0; transform: translateY(18px) scale(0.94); }
+  12% { opacity: 1; transform: none; }
+  85% { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(10px); }
+}
+
+.animate-pop { animation: pop 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.animate-sheet { animation: sheet-up 0.42s cubic-bezier(0.2, 0.9, 0.25, 1) both; }
+.animate-fade { animation: fade-in 0.28s ease both; }
+.animate-fade-up { animation: fade-up 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.animate-toast { animation: toast 2.4s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* ---------- View Transitions (navegación entre pantallas) ---------- */
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-old(.page-exit) {
+  animation: 0.16s ease both fade-out-quick;
+}
+::view-transition-new(.page-enter) {
+  animation: 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both fade-up;
+}
+::view-transition-group(*) {
+  animation-duration: 0.38s;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes fade-out-quick {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+    transition: none !important;
+  }
+}
