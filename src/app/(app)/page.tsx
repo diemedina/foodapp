@@ -1,5 +1,5 @@
 import { PageTransition } from "@/components/page-transition";
-import { dow, hourNow, longDate, mondayOf, rangeText, todayISO } from "@/lib/dates";
+import { dow, hourNow, longDate, weekStartOf, rangeText, todayISO } from "@/lib/dates";
 import { mealForHour } from "@/lib/meals";
 import { plannedCount } from "@/lib/planning";
 import { buildShoppingList } from "@/lib/shopping";
@@ -10,17 +10,17 @@ export default async function TodayPage() {
   const recipes = await getRecipes();
   const now = new Date();
   const today = todayISO(now);
-  const monday = mondayOf(today);
-  const nextMonday = mondayOf(today, 1);
+  const weekStart = weekStartOf(today);
+  const nextWeekStart = weekStartOf(today, 1);
   const lateWeek = dow(today) >= 4;
-  const shopMonday = lateWeek ? nextMonday : monday;
+  const shopWeekStart = lateWeek ? nextWeekStart : weekStart;
 
   const [plan, nextPlan, usage, shopState, shopPlan] = await Promise.all([
-    getPlan(monday),
-    getPlan(nextMonday),
+    getPlan(weekStart),
+    getPlan(nextWeekStart),
     getUsage(),
-    getShoppingState(shopMonday),
-    lateWeek ? getPlan(nextMonday) : getPlan(monday),
+    getShoppingState(shopWeekStart),
+    lateWeek ? getPlan(nextWeekStart) : getPlan(weekStart),
   ]);
   const shopping = buildShoppingList({
     plan: shopPlan,
@@ -37,14 +37,14 @@ export default async function TodayPage() {
         today={today}
         todayIndex={dow(today)}
         dateText={longDate(today)}
-        monday={monday}
+        weekStart={weekStart}
         nowMeal={mealForHour(hourNow(now))}
         plan={plan}
         recipes={recipes}
         usage={usage}
         lateWeek={lateWeek}
         nextPlanned={plannedCount(nextPlan)}
-        nextRange={rangeText(nextMonday)}
+        nextRange={rangeText(nextWeekStart)}
         thisPlanned={plannedCount(plan)}
         pending={shopping.pending + pendingHousehold}
       />

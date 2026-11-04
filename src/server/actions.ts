@@ -32,7 +32,7 @@ import { findSlot, getPlan, getRecipes, getUsage, getWeekPlanId } from "./querie
 
 const weekStartSchema = z
   .string()
-  .refine((v) => isISODate(v) && dow(v) === 0, "La semana debe empezar un lunes (YYYY-MM-DD).");
+  .refine((v) => isISODate(v) && dow(v) === 0, "La semana debe empezar un sábado (YYYY-MM-DD).");
 const daySchema = z.number().int().min(0).max(6);
 const mealSchema = z.enum(MEAL_IDS as [MealId, ...MealId[]]);
 const idSchema = z.number().int().positive();
@@ -120,10 +120,12 @@ export async function moveSlot(input: { weekStart: string; day: number; meal: Me
   const a = await findSlot(weekPlanId, data.day, data.meal);
   if (!a) return { swapped: false };
   const b = await findSlot(weekPlanId, data.toDay, data.meal);
-  await db.delete(planSlots).where(inArray(planSlots.id, b ? [a.id, b.id] : [a.id]));
   const rows = [{ weekPlanId, day: data.toDay, meal: data.meal, recipeId: a.recipeId, isLeftover: a.isLeftover }];
   if (b) rows.push({ weekPlanId, day: data.day, meal: data.meal, recipeId: b.recipeId, isLeftover: b.isLeftover });
-  await db.insert(planSlots).values(rows);
+  await db.transaction(async (tx) => {
+    await tx.delete(planSlots).where(inArray(planSlots.id, b ? [a.id, b.id] : [a.id]));
+    await tx.insert(planSlots).values(rows);
+  });
   refresh();
   return { swapped: Boolean(b) };
 }
@@ -155,8 +157,10 @@ export async function clearWeek(input: { weekStart: string }) {
 async function replaceWeek(weekStart: string, slots: { day: number; meal: string; recipeId: number; isLeftover: boolean }[]) {
   const db = getDb();
   const weekPlanId = await ensureWeekPlan(weekStart);
-  await db.delete(planSlots).where(eq(planSlots.weekPlanId, weekPlanId));
-  if (slots.length) await db.insert(planSlots).values(slots.map((s) => ({ ...s, weekPlanId })));
+  await db.transaction(async (tx) => {
+    await tx.delete(planSlots).where(eq(planSlots.weekPlanId, weekPlanId));
+    if (slots.length) await tx.insert(planSlots).values(slots.map((s) => ({ ...s, weekPlanId })));
+  });
 }
 
 export async function copyWeek(input: { fromWeekStart: string; toWeekStart: string }) {

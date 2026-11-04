@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useOptimistic, useState } from "react";
 import { BagIcon, CalendarIcon, ChevronRightIcon, ClockIcon, MealIcon, PlusIcon, SwapIcon } from "@/components/icons";
 import { PickerSheet, type PickTarget } from "@/components/picker-sheet";
 import { MEAL_IDS, MEALS, MOMENT, mealOf, slotKey } from "@/lib/meals";
@@ -11,7 +11,7 @@ export function TodayView(props: {
   today: string;
   todayIndex: number;
   dateText: string;
-  monday: string;
+  weekStart: string;
   nowMeal: MealId;
   plan: PlanMap;
   recipes: Recipe[];
@@ -22,7 +22,8 @@ export function TodayView(props: {
   thisPlanned: number;
   pending: number;
 }) {
-  const { todayIndex, nowMeal, plan, recipes } = props;
+  const { todayIndex, nowMeal, recipes } = props;
+  const [plan, updatePlan] = useOptimistic(props.plan, (current, update: (plan: PlanMap) => PlanMap) => update(current));
   const [chosen, setChosen] = useState<MealId | null>(null);
   const [pick, setPick] = useState<PickTarget>(null);
   const recipesById = useMemo(() => new Map(recipes.map((r) => [r.id, r])), [recipes]);
@@ -57,9 +58,7 @@ export function TodayView(props: {
                   ? props.todayIndex <= 5
                     ? "Día de súper"
                     : "La semana que viene está lista"
-                  : props.todayIndex === 4
-                    ? "Es viernes: planificá la semana"
-                    : "Planificá la semana que viene"}
+                  : "Planificá la semana que viene"}
               </strong>
               <span className="text-[13px] text-white/80">
                 {planDone
@@ -243,9 +242,10 @@ export function TodayView(props: {
       <PickerSheet
         target={pick}
         onClose={() => setPick(null)}
-        weekStart={props.monday}
-        currentMonday={props.monday}
+        weekStart={props.weekStart}
+        currentWeekStart={props.weekStart}
         plan={plan}
+        updatePlan={updatePlan}
         recipes={recipes}
         usage={props.usage}
       />

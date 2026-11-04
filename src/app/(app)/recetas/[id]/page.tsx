@@ -4,7 +4,7 @@ import { ViewTransition } from "react";
 import { FlashToast } from "@/components/flash-toast";
 import { CalendarIcon, ChevronLeftIcon, EditIcon, FlaskIcon, MealIcon } from "@/components/icons";
 import { PageTransition } from "@/components/page-transition";
-import { mondayOf, todayISO } from "@/lib/dates";
+import { weekStartOf, todayISO } from "@/lib/dates";
 import { mealOf, mealsText } from "@/lib/meals";
 import { fmtAmount } from "@/lib/units";
 import { getPlan, getRecipe } from "@/server/queries";
@@ -15,7 +15,7 @@ export default async function RecipePage(props: PageProps<"/recetas/[id]">) {
   const search = await props.searchParams;
   const recipe = await getRecipe(Number(id));
   if (!recipe) notFound();
-  const plan = await getPlan(mondayOf(todayISO()));
+  const plan = await getPlan(weekStartOf(todayISO()));
   const uses = Object.values(plan).filter((s) => s.recipeId === recipe.id).length;
   const m = mealOf(recipe.meals[0] ?? "almuerzo");
   const flash = search.guardada === "nueva" ? "Receta guardada" : search.guardada === "editada" ? "Cambios guardados" : null;

@@ -15,11 +15,11 @@ export function lastUseBadge(opts: {
   usage: Usage;
   recipeId: number;
   weekStart: string;
-  currentMonday: string;
+  currentWeekStart: string;
   plan: PlanMap;
   exceptKey: string;
 }): LastUseBadge {
-  const { usage, recipeId, weekStart, currentMonday, plan, exceptKey } = opts;
+  const { usage, recipeId, weekStart, currentWeekStart, plan, exceptKey } = opts;
   const same = Object.entries(plan).filter(
     ([k, s]) => k !== exceptKey && s.recipeId === recipeId && !s.leftover,
   ).length;
@@ -27,8 +27,8 @@ export function lastUseBadge(opts: {
   const weeks = usage[recipeId] ?? [];
   const last = weeks.find((w) => w < weekStart);
   if (!last) return { text: "Nunca la elegiste", tone: "old" };
-  if (last === currentMonday) return { text: "La elegiste esta semana", tone: "recent" };
-  const ago = weeksBetween(last, currentMonday);
+  if (last === currentWeekStart) return { text: "La elegiste esta semana", tone: "recent" };
+  const ago = weeksBetween(last, currentWeekStart);
   if (ago <= 1) return { text: "Hace 1 semana", tone: "week" };
   return { text: `Hace ${ago} semanas`, tone: "old" };
 }
@@ -134,6 +134,6 @@ export function plannedCount(plan: PlanMap): number {
   return Object.keys(plan).length;
 }
 
-export function dateOfDay(monday: string, day: number): string {
-  return addDays(monday, day);
+export function dateOfDay(weekStart: string, day: number): string {
+  return addDays(weekStart, day);
 }

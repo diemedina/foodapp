@@ -3,7 +3,7 @@ import { ViewTransition } from "react";
 import { FlashToast } from "@/components/flash-toast";
 import { MealIcon, PlusIcon } from "@/components/icons";
 import { PageTransition } from "@/components/page-transition";
-import { mondayOf, todayISO } from "@/lib/dates";
+import { weekStartOf, todayISO } from "@/lib/dates";
 import { isMealId, MEALS, mealOf, mealsText } from "@/lib/meals";
 import { getPlan, getRecipes } from "@/server/queries";
 
@@ -11,7 +11,7 @@ export default async function RecipesPage(props: PageProps<"/recetas">) {
   const params = await props.searchParams;
   const filter = isMealId(params.comida) ? params.comida : null;
   const recipes = await getRecipes();
-  const plan = await getPlan(mondayOf(todayISO()));
+  const plan = await getPlan(weekStartOf(todayISO()));
   const uses = new Map<number, number>();
   for (const s of Object.values(plan)) uses.set(s.recipeId, (uses.get(s.recipeId) ?? 0) + 1);
   const visible = recipes.filter((r) => !filter || r.meals.includes(filter));

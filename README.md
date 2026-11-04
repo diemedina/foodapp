@@ -70,9 +70,26 @@ scripts/seed.ts        datos iniciales
 - **Renderizado:** cada pantalla se arma en el servidor con los datos (Cache Components: el esqueleto se muestra al instante y el contenido llega por streaming). La interacción va en componentes cliente chicos.
 - **Cambios:** todo pasa por Server Actions en `src/server/actions.ts`, que validan con Zod, verifican el código de acceso y refrescan la pantalla con `refresh()`. Tachar en la lista es optimista (`useOptimistic`).
 - **Lista de compras:** no se guarda; se calcula desde el plan de la semana, menos lo que ya hay en casa. Solo se guarda lo tachado.
-- **Semanas:** empiezan el lunes y se calculan con la zona horaria de `APP_TIME_ZONE` (Buenos Aires por defecto). De viernes a domingo la app abre la semana que viene.
+- **Semanas:** van del sábado al viernes y se calculan con la zona horaria de `APP_TIME_ZONE` (Buenos Aires por defecto). De miércoles a viernes la app abre la semana que viene.
 - **Animaciones:** View Transitions de React para navegar entre pantallas y para la tarjeta de receta que se expande al detalle; paneles, avisos y tildes con CSS. Se desactivan con "reducir movimiento".
 
 ## Despliegue
 
-Pensado para Vercel (plan Hobby) + Neon (plan Free). Variables necesarias en Vercel: `DATABASE_URL` y `ACCESS_CODE` (y opcionalmente `APP_TIME_ZONE`). La fuente Nunito Sans se descarga de Google Fonts al compilar, así que el build necesita internet.
+Para actualizar una base que ya usaba semanas de lunes a domingo, probá primero `scripts/migrations/saturday-weeks.sql` en una rama de Neon. Durante el cambio a producción, detené la versión anterior, ejecutá el SQL con la conexión directa y publicá esta versión. La migración conserva las fechas de las comidas y los días de las plantillas. Las marcas de compras quedan asociadas a la nueva semana que contiene el lunes de la lista original.
+
+### Render Free con Neon
+
+En el [panel de Render](https://dashboard.render.com/), elegí **New → Web Service** y conectá el repositorio de GitHub. Seleccioná la rama que querés publicar, el runtime **Node** y la instancia **Free**. Dejá vacío el directorio raíz.
+
+| Campo | Valor |
+| --- | --- |
+| Build Command | `npm ci --include=dev && npm run build` |
+| Start Command | `npm start -- --hostname 0.0.0.0` |
+| Health Check Path | `/acceso` |
+| `DATABASE_URL` | URL pooled de la base existente en Neon |
+| `ACCESS_CODE` | Código de acceso privado y difícil de adivinar |
+| `APP_TIME_ZONE` | Opcional. Por defecto, `America/Argentina/Buenos_Aires` |
+
+Cargá las variables en **Environment Variables** de Render. El servicio usa el puerto que Render asigna mediante `PORT`. El build descarga Nunito Sans desde Google Fonts. Si la base ya tiene las tablas y los datos de la app, alcanza con configurar la conexión.
+
+Una vez publicado, abrí la URL `onrender.com`, ingresá el código y comprobá que cargue la lista de recetas. En el [plan gratuito de Render](https://render.com/docs/free), el servicio se suspende después de 15 minutos de inactividad y la primera visita puede tardar alrededor de un minuto.

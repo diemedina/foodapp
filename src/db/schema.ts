@@ -44,13 +44,13 @@ export const recipeIngredients = pgTable("recipe_ingredients", {
   position: integer("position").notNull().default(0),
 });
 
-/** Una fila por semana; `weekStart` es siempre el lunes (YYYY-MM-DD). */
+/** Una fila por semana; `weekStart` es siempre el sábado (YYYY-MM-DD). */
 export const weekPlans = pgTable("week_plans", {
   id: serial("id").primaryKey(),
   weekStart: date("week_start", { mode: "string" }).notNull().unique(),
 });
 
-/** Cada comida planificada. `day` va de 0 (lunes) a 6 (domingo). */
+/** Cada comida planificada. `day` va de 0 (sábado) a 6 (viernes). */
 export const planSlots = pgTable(
   "plan_slots",
   {

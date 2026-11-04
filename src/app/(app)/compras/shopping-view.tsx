@@ -27,13 +27,13 @@ type Patch =
 
 export function ShoppingView(props: {
   offset: number;
-  monday: string;
+  weekStart: string;
   ranges: string[];
   list: ShoppingList;
   household: HouseholdItem[];
   sectionOrder: string[];
 }) {
-  const { monday } = props;
+  const { weekStart } = props;
   const toast = useToast();
   const [, startTransition] = useTransition();
   const [showOrder, setShowOrder] = useState(false);
@@ -115,7 +115,7 @@ export function ShoppingView(props: {
           <button
             type="button"
             disabled={done === 0}
-            onClick={() => optimistic({ type: "uncheckAll" }, () => uncheckAll({ weekStart: monday }), "Lista desmarcada")}
+            onClick={() => optimistic({ type: "uncheckAll" }, () => uncheckAll({ weekStart }), "Lista desmarcada")}
             className="glass h-11 rounded-full px-4 text-[13px] font-bold disabled:opacity-50"
           >
             Desmarcar
@@ -166,7 +166,7 @@ export function ShoppingView(props: {
                     aria-checked={it.checked}
                     onClick={() =>
                       optimistic({ type: "check", key: it.key, checked: !it.checked }, () =>
-                        setChecked({ weekStart: monday, itemKey: it.key, checked: !it.checked }),
+                        setChecked({ weekStart, itemKey: it.key, checked: !it.checked }),
                       )
                     }
                     className="flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2.5 pl-2 pr-1 text-left active:scale-100"

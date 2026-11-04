@@ -18,8 +18,8 @@ export const MEALS: MealInfo[] = [
 
 export const MEAL_IDS: MealId[] = MEALS.map((m) => m.id);
 
-export const DAYS = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-export const DAY_SHORT = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+export const DAYS = ["Sábado", "Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes"];
+export const DAY_SHORT = ["Sáb", "Dom", "Lun", "Mar", "Mié", "Jue", "Vie"];
 
 export function isMealId(value: unknown): value is MealId {
   return typeof value === "string" && (MEAL_IDS as string[]).includes(value);
@@ -53,7 +53,7 @@ export function parseSlotKey(key: string): { day: number; meal: MealId } {
   return { day: Number(d), meal: meal as MealId };
 }
 
-/** Índice cronológico de una comida dentro de la semana (0 = desayuno del lunes). */
+/** Índice cronológico de una comida dentro de la semana (0 = desayuno del sábado). */
 export function slotIndex(day: number, meal: MealId): number {
   return day * 4 + MEAL_IDS.indexOf(meal);
 }

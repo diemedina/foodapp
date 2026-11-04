@@ -1,6 +1,6 @@
 /**
  * Fechas como texto ISO (YYYY-MM-DD) para no depender de la zona horaria del servidor.
- * La semana empieza el lunes. `dow` devuelve 0 = lunes ... 6 = domingo.
+ * La semana empieza el sábado. `dow` devuelve 0 = sábado ... 6 = viernes.
  */
 import { DAYS } from "./meals";
 
@@ -57,11 +57,11 @@ export function addDays(iso: string, days: number): string {
 }
 
 export function dow(iso: string): number {
-  return (toUTC(iso).getUTCDay() + 6) % 7;
+  return (toUTC(iso).getUTCDay() + 1) % 7;
 }
 
-/** Lunes de la semana de `iso`, desplazado `offset` semanas. */
-export function mondayOf(iso: string, offset = 0): string {
+/** Sábado de la semana de `iso`, desplazado `offset` semanas. */
+export function weekStartOf(iso: string, offset = 0): string {
   return addDays(iso, -dow(iso) + offset * 7);
 }
 
@@ -69,17 +69,17 @@ export function dayOfMonth(iso: string): number {
   return Number(iso.slice(8, 10));
 }
 
-export function weeksBetween(fromMonday: string, toMonday: string): number {
-  return Math.round((toUTC(toMonday).getTime() - toUTC(fromMonday).getTime()) / (7 * 864e5));
+export function weeksBetween(fromWeekStart: string, toWeekStart: string): number {
+  return Math.round((toUTC(toWeekStart).getTime() - toUTC(fromWeekStart).getTime()) / (7 * 864e5));
 }
 
 /** "12–18 oct" o "28 sep – 4 oct" */
-export function rangeText(monday: string): string {
-  const sunday = addDays(monday, 6);
-  const m1 = Number(monday.slice(5, 7)) - 1;
-  const m2 = Number(sunday.slice(5, 7)) - 1;
-  if (m1 === m2) return `${dayOfMonth(monday)}–${dayOfMonth(sunday)} ${MONTHS[m2]}`;
-  return `${dayOfMonth(monday)} ${MONTHS[m1]} – ${dayOfMonth(sunday)} ${MONTHS[m2]}`;
+export function rangeText(weekStart: string): string {
+  const friday = addDays(weekStart, 6);
+  const m1 = Number(weekStart.slice(5, 7)) - 1;
+  const m2 = Number(friday.slice(5, 7)) - 1;
+  if (m1 === m2) return `${dayOfMonth(weekStart)}–${dayOfMonth(friday)} ${MONTHS[m2]}`;
+  return `${dayOfMonth(weekStart)} ${MONTHS[m1]} – ${dayOfMonth(friday)} ${MONTHS[m2]}`;
 }
 
 /** "domingo 11 de octubre" */

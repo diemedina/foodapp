@@ -24,8 +24,9 @@ export function PickerSheet({
   onClose,
   onMoved,
   weekStart,
-  currentMonday,
+  currentWeekStart,
   plan,
+  updatePlan,
   recipes,
   usage,
 }: {
@@ -33,8 +34,9 @@ export function PickerSheet({
   onClose: () => void;
   onMoved?: (day: number) => void;
   weekStart: string;
-  currentMonday: string;
+  currentWeekStart: string;
   plan: PlanMap;
+  updatePlan: (update: (plan: PlanMap) => PlanMap) => void;
   recipes: Recipe[];
   usage: Usage;
 }) {
@@ -52,16 +54,25 @@ export function PickerSheet({
   const ranked = rankRecipesForSlot({ recipes, meal, plan, exceptKey: key, usage, weekStart });
   const leftovers = leftoverCandidates(plan, day, meal, recipesById);
 
-  const run = (fn: () => Promise<unknown>, message: string) =>
+  const run = (update: (plan: PlanMap) => PlanMap, fn: () => Promise<unknown>, message: string) => {
+    onClose();
     startTransition(async () => {
+      updatePlan(update);
       try {
         await fn();
         toast(message);
-        onClose();
       } catch (e) {
         toast(e instanceof Error ? e.message : "No se pudo guardar.", "error");
       }
     });
+  };
+
+  const updateSlot = (slot?: PlanMap[string]) => (current: PlanMap) => {
+    const next = { ...current };
+    if (slot) next[key] = slot;
+    else delete next[key];
+    return next;
+  };
 
   return (
     <Sheet open onClose={onClose} label={`Elegir ${info.name.toLowerCase()}`}>
@@ -88,18 +99,22 @@ export function PickerSheet({
                   type="button"
                   disabled={isCur || pending}
                   aria-label={isCur ? `${name} (día actual)` : `Mover a ${name}${otherName ? `, intercambia con ${otherName}` : ""}`}
-                  onClick={() =>
-                    startTransition(async () => {
-                      try {
-                        const res = await moveSlot({ weekStart, day, meal, toDay: d });
-                        toast(`${res?.swapped ? "Intercambiada con el" : "Movida al"} ${name.toLowerCase()}`);
-                        onMoved?.(d);
-                        onClose();
-                      } catch {
-                        toast("No se pudo mover.", "error");
-                      }
-                    })
-                  }
+                  onClick={() => {
+                    const destination = slotKey(d, meal);
+                    run(
+                      (current) => {
+                        const source = current[key];
+                        if (!source) return current;
+                        const next = { ...current, [destination]: source };
+                        if (current[destination]) next[key] = current[destination];
+                        else delete next[key];
+                        return next;
+                      },
+                      () => moveSlot({ weekStart, day, meal, toDay: d }),
+                      `${other ? "Intercambiada con el" : "Movida al"} ${name.toLowerCase()}`,
+                    );
+                    onMoved?.(d);
+                  }}
                   className={`flex h-[54px] flex-col items-center justify-center gap-0.5 rounded-[14px] border ${
                     isCur ? "border-ink bg-ink text-white" : "border-ink/10 bg-white/85"
                   }`}
@@ -132,6 +147,7 @@ export function PickerSheet({
                 disabled={pending}
                 onClick={() =>
                   run(
+                    updateSlot({ recipeId: recipe.id, leftover: true }),
                     () => setSlot({ weekStart, day, meal, recipeId: recipe.id, leftover: true }),
                     `Sobras de ${recipe.name} · cociná doble`,
                   )
@@ -161,7 +177,7 @@ export function PickerSheet({
         )}
         {ranked.map(({ recipe, suggested }) => {
           const on = Boolean(current && !current.leftover && current.recipeId === recipe.id);
-          const badge = lastUseBadge({ usage, recipeId: recipe.id, weekStart, currentMonday, plan, exceptKey: key });
+          const badge = lastUseBadge({ usage, recipeId: recipe.id, weekStart, currentWeekStart, plan, exceptKey: key });
           return (
             <button
               key={recipe.id}
@@ -171,6 +187,7 @@ export function PickerSheet({
               disabled={pending}
               onClick={() =>
                 run(
+                  updateSlot({ recipeId: recipe.id, leftover: false }),
                   () => setSlot({ weekStart, day, meal, recipeId: recipe.id }),
                   `${info.name} del ${DAYS[day].toLowerCase()} listo`,
                 )
@@ -209,7 +226,7 @@ export function PickerSheet({
         <button
           type="button"
           disabled={!current || pending}
-          onClick={() => run(() => clearSlot({ weekStart, day, meal }), `Quitada del ${DAYS[day].toLowerCase()}`)}
+          onClick={() => run(updateSlot(), () => clearSlot({ weekStart, day, meal }), `Quitada del ${DAYS[day].toLowerCase()}`)}
           className="h-[52px] flex-1 rounded-full border border-ink/10 bg-white/70 text-sm font-bold text-danger disabled:opacity-40"
         >
           Quitar del día

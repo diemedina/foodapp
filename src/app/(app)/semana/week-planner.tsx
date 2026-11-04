@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState, useTransition } from "react";
+import { useId, useMemo, useOptimistic, useState, useTransition } from "react";
 import { ChevronRightIcon, CloseIcon, MealIcon, PlusIcon, SparkleIcon, StarIcon } from "@/components/icons";
 import { PickerSheet, type PickTarget } from "@/components/picker-sheet";
 import { Sheet } from "@/components/sheet";
@@ -8,23 +8,25 @@ import { useToast } from "@/components/toast";
 import { WeekTabs } from "@/components/week-tabs";
 import { addDays, dayOfMonth } from "@/lib/dates";
 import { DAY_SHORT, DAYS, MEALS, slotKey } from "@/lib/meals";
-import { leftoverLinks, plannedCount } from "@/lib/planning";
+import { autofillPlan, leftoverLinks, plannedCount } from "@/lib/planning";
 import type { PlanMap, Recipe, Template, Usage } from "@/lib/types";
 import { applyTemplate, autofillWeek, clearWeek, copyWeek, deleteTemplate, saveTemplate } from "@/server/actions";
 
 export function WeekPlanner(props: {
   offset: number;
-  monday: string;
-  currentMonday: string;
+  weekStart: string;
+  currentWeekStart: string;
   todayIndex: number;
   initialDay: number;
   ranges: string[];
   plan: PlanMap;
+  currentPlan: PlanMap | null;
   recipes: Recipe[];
   usage: Usage;
   templates: Template[];
 }) {
-  const { offset, monday, plan, recipes } = props;
+  const { offset, weekStart, recipes } = props;
+  const [plan, updatePlan] = useOptimistic(props.plan, (current, update: (plan: PlanMap) => PlanMap) => update(current));
   const toast = useToast();
   const [day, setDay] = useState(props.initialDay);
   const [pick, setPick] = useState<PickTarget>(null);
@@ -37,9 +39,10 @@ export function WeekPlanner(props: {
   const dayDone = MEALS.filter((m) => plan[slotKey(day, m.id)]).length;
   const target = offset === 0 ? "esta semana" : "la semana que viene";
 
-  const run = (fn: () => Promise<unknown>, message: (r: unknown) => string) =>
+  const run = (fn: () => Promise<unknown>, message: (r: unknown) => string, update?: (plan: PlanMap) => PlanMap) =>
     startTransition(async () => {
       try {
+        if (update) updatePlan(update);
         const res = await fn();
         toast(message(res));
       } catch (e) {
@@ -83,14 +86,14 @@ export function WeekPlanner(props: {
               type="button"
               role="tab"
               aria-selected={on}
-              aria-label={`${name} ${dayOfMonth(addDays(monday, d))}`}
+              aria-label={`${name} ${dayOfMonth(addDays(weekStart, d))}`}
               onClick={() => setDay(d)}
               className={`flex h-[74px] flex-col items-center justify-center gap-1 rounded-[20px] ${
                 on ? "border border-ink bg-ink text-white" : `glass ${isToday ? "!border-[1.5px] !border-orange" : ""}`
               }`}
             >
               <span className="text-[11px] font-semibold opacity-80">{isToday ? "Hoy" : DAY_SHORT[d]}</span>
-              <span className="text-[17px] font-extrabold leading-none">{dayOfMonth(addDays(monday, d))}</span>
+              <span className="text-[17px] font-extrabold leading-none">{dayOfMonth(addDays(weekStart, d))}</span>
               <span className="mt-0.5 flex gap-0.5">
                 {MEALS.map((m) => (
                   <span
@@ -115,7 +118,7 @@ export function WeekPlanner(props: {
 
       <div className="flex items-baseline justify-between px-1">
         <h2 className="text-xl font-extrabold tracking-tight">
-          {DAYS[day]} {dayOfMonth(addDays(monday, day))}
+          {DAYS[day]} {dayOfMonth(addDays(weekStart, day))}
         </h2>
         <span className="text-[13px] text-muted">{dayDone} de 4 comidas</span>
       </div>
@@ -176,10 +179,17 @@ export function WeekPlanner(props: {
           disabled={pending}
           onClick={() =>
             run(
-              () => autofillWeek({ weekStart: monday }),
+              () => autofillWeek({ weekStart }),
               (r) => {
                 const added = (r as { added: number } | undefined)?.added ?? 0;
                 return added ? `Sumamos ${added} comidas sugeridas` : "La semana ya estaba completa";
+              },
+              (current) => {
+                const next = { ...current };
+                for (const { day, meal, recipeId } of autofillPlan({ plan: current, recipes, usage: props.usage, weekStart })) {
+                  next[slotKey(day, meal)] = { recipeId, leftover: false };
+                }
+                return next;
               },
             )
           }
@@ -208,7 +218,7 @@ export function WeekPlanner(props: {
               type="button"
               disabled={pending}
               onClick={() =>
-                run(() => copyWeek({ fromWeekStart: props.currentMonday, toWeekStart: monday }), () => "Copiamos esta semana")
+                run(() => copyWeek({ fromWeekStart: props.currentWeekStart, toWeekStart: weekStart }), () => "Copiamos esta semana", () => props.currentPlan ?? {})
               }
               className="glass h-12 flex-1 rounded-full text-[13px] font-bold"
             >
@@ -218,7 +228,7 @@ export function WeekPlanner(props: {
           <button
             type="button"
             disabled={pending || planned === 0}
-            onClick={() => run(() => clearWeek({ weekStart: monday }), () => "Semana vaciada")}
+            onClick={() => run(() => clearWeek({ weekStart }), () => "Semana vaciada", () => ({}))}
             className="glass h-12 flex-1 rounded-full text-[13px] font-bold disabled:opacity-50"
           >
             Vaciar semana
@@ -230,9 +240,10 @@ export function WeekPlanner(props: {
         target={pick}
         onClose={() => setPick(null)}
         onMoved={(d) => setDay(d)}
-        weekStart={monday}
-        currentMonday={props.currentMonday}
+        weekStart={weekStart}
+        currentWeekStart={props.currentWeekStart}
         plan={plan}
+        updatePlan={updatePlan}
         recipes={recipes}
         usage={props.usage}
       />
@@ -242,8 +253,16 @@ export function WeekPlanner(props: {
         onClose={() => setShowTemplates(false)}
         templates={props.templates}
         recipesById={recipesById}
-        monday={monday}
+        weekStart={weekStart}
         target={target}
+        onApply={(template) => {
+          setShowTemplates(false);
+          run(
+            () => applyTemplate({ templateId: template.id, weekStart }),
+            () => `Aplicamos "${template.name}"`,
+            () => template.plan,
+          );
+        }}
       />
     </>
   );
@@ -254,15 +273,17 @@ function TemplatesSheet({
   onClose,
   templates,
   recipesById,
-  monday,
+  weekStart,
   target,
+  onApply,
 }: {
   open: boolean;
   onClose: () => void;
   templates: Template[];
   recipesById: Map<number, Recipe>;
-  monday: string;
+  weekStart: string;
   target: string;
+  onApply: (template: Template) => void;
 }) {
   const toast = useToast();
   const [name, setName] = useState("");
@@ -283,7 +304,7 @@ function TemplatesSheet({
           if (!name.trim()) return setError("Poné un nombre para el plan.");
           startTransition(async () => {
             try {
-              await saveTemplate({ name, weekStart: monday });
+              await saveTemplate({ name, weekStart: weekStart });
               toast(`Guardamos "${name.trim()}"`);
               setName("");
               setError("");
@@ -362,17 +383,7 @@ function TemplatesSheet({
               <button
                 type="button"
                 disabled={pending}
-                onClick={() =>
-                  startTransition(async () => {
-                    try {
-                      await applyTemplate({ templateId: t.id, weekStart: monday });
-                      toast(`Aplicamos "${t.name}"`);
-                      onClose();
-                    } catch {
-                      toast("No se pudo aplicar.", "error");
-                    }
-                  })
-                }
+                onClick={() => onApply(t)}
                 className="h-11 rounded-full bg-orange text-sm font-extrabold text-ink"
               >
                 Aplicar a {target}

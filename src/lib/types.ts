@@ -19,7 +19,7 @@ export type Slot = { recipeId: number; leftover: boolean };
 /** Plan de una semana. La clave es `${día}-${comida}`, por ejemplo `0-almuerzo`. */
 export type PlanMap = Record<string, Slot>;
 
-/** Para cada receta, las semanas (lunes, YYYY-MM-DD) en que se eligió, de la más nueva a la más vieja. */
+/** Para cada receta, las semanas (sábado, YYYY-MM-DD) en que se eligió, de la más nueva a la más vieja. */
 export type Usage = Record<number, string[]>;
 
 export type HouseholdItem = { id: number; name: string; category: string; checked: boolean };
