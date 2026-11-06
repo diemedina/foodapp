@@ -1,7 +1,7 @@
 "use server";
 
-import { and, eq, inArray, sql } from "drizzle-orm";
-import { refresh } from "next/cache";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -24,6 +24,7 @@ import { MEAL_IDS, parseSlotKey, sortMeals } from "@/lib/meals";
 import { autofillPlan } from "@/lib/planning";
 import { DEFAULT_SECTIONS, HOUSEHOLD_CATEGORIES } from "@/lib/sections";
 import type { MealId } from "@/lib/types";
+import { guessSection } from "@/lib/categorize";
 import { capitalize, normalizeKey, parseIngredientLine } from "@/lib/units";
 import { ACCESS_COOKIE, ACCESS_MAX_AGE, assertAccess, expectedToken, tokenForCode } from "./auth";
 import { findSlot, getPlan, getRecipes, getUsage, getWeekPlanId } from "./queries";
@@ -93,7 +94,6 @@ export async function setSlot(input: {
       target: [planSlots.weekPlanId, planSlots.day, planSlots.meal],
       set: { recipeId: data.recipeId, isLeftover: data.leftover ?? false },
     });
-  refresh();
 }
 
 export async function clearSlot(input: { weekStart: string; day: number; meal: MealId }) {
@@ -104,7 +104,6 @@ export async function clearSlot(input: { weekStart: string; day: number; meal: M
   await getDb()
     .delete(planSlots)
     .where(and(eq(planSlots.weekPlanId, weekPlanId), eq(planSlots.day, data.day), eq(planSlots.meal, data.meal)));
-  refresh();
 }
 
 /** Mueve una comida a otro día; si ese día ya tiene esa comida, se intercambian. */
@@ -126,7 +125,6 @@ export async function moveSlot(input: { weekStart: string; day: number; meal: Me
     await tx.delete(planSlots).where(inArray(planSlots.id, b ? [a.id, b.id] : [a.id]));
     await tx.insert(planSlots).values(rows);
   });
-  refresh();
   return { swapped: Boolean(b) };
 }
 
@@ -142,7 +140,6 @@ export async function autofillWeek(input: { weekStart: string }) {
       .values(added.map((a) => ({ weekPlanId, day: a.day, meal: a.meal, recipeId: a.recipeId, isLeftover: false })))
       .onConflictDoNothing();
   }
-  refresh();
   return { added: added.length };
 }
 
@@ -151,7 +148,6 @@ export async function clearWeek(input: { weekStart: string }) {
   const { weekStart } = z.object({ weekStart: weekStartSchema }).parse(input);
   const weekPlanId = await getWeekPlanId(weekStart);
   if (weekPlanId) await getDb().delete(planSlots).where(eq(planSlots.weekPlanId, weekPlanId));
-  refresh();
 }
 
 async function replaceWeek(weekStart: string, slots: { day: number; meal: string; recipeId: number; isLeftover: boolean }[]) {
@@ -171,7 +167,6 @@ export async function copyWeek(input: { fromWeekStart: string; toWeekStart: stri
     data.toWeekStart,
     Object.entries(plan).map(([key, s]) => ({ ...parseSlotKey(key), recipeId: s.recipeId, isLeftover: s.leftover })),
   );
-  refresh();
 }
 
 // ---------- Planes favoritos ----------
@@ -187,7 +182,6 @@ export async function saveTemplate(input: { name: string; weekStart: string }) {
   await db.insert(templateSlots).values(
     entries.map(([key, s]) => ({ templateId: tpl.id, ...parseSlotKey(key), recipeId: s.recipeId, isLeftover: s.leftover })),
   );
-  refresh();
 }
 
 export async function applyTemplate(input: { templateId: number; weekStart: string }) {
@@ -198,19 +192,17 @@ export async function applyTemplate(input: { templateId: number; weekStart: stri
     data.weekStart,
     slots.map((s) => ({ day: s.day, meal: s.meal, recipeId: s.recipeId, isLeftover: s.isLeftover })),
   );
-  refresh();
 }
 
 export async function deleteTemplate(input: { templateId: number }) {
   await assertAccess();
   const { templateId } = z.object({ templateId: idSchema }).parse(input);
   await getDb().delete(planTemplates).where(eq(planTemplates.id, templateId));
-  refresh();
 }
 
 // ---------- Recetas ----------
 
-export type RecipeFormState = { error?: string };
+export type RecipeFormState = { error?: string; location?: string };
 
 const recipeFormSchema = z.object({
   id: z.coerce.number().int().positive().optional(),
@@ -236,19 +228,22 @@ export async function saveRecipe(_prev: RecipeFormState, formData: FormData): Pr
   if (!lines.length) return { error: "Agregá al menos un ingrediente." };
 
   const db = getDb();
-  // Asegura que cada ingrediente exista en el catálogo (sección "Otros" si es nuevo).
+  // Asegura que cada ingrediente exista en el catálogo; si es nuevo, adivina su sección del súper.
   const keys = [...new Set(lines.map((l) => normalizeKey(l.name)))];
-  await db
-    .insert(ingredients)
-    .values(
-      keys.map((key) => {
-        const line = lines.find((l) => normalizeKey(l.name) === key)!;
-        return { key, name: capitalize(line.name), defaultUnit: line.unit, section: "Otros" };
-      }),
-    )
-    .onConflictDoNothing();
-  const catalog = await db.select().from(ingredients).where(inArray(ingredients.key, keys));
-  const byKey = new Map(catalog.map((c) => [c.key, c]));
+  const known = await catalogByKey();
+  const missing = keys.filter((k) => !known.has(k));
+  if (missing.length) {
+    await db
+      .insert(ingredients)
+      .values(
+        missing.map((key) => {
+          const line = lines.find((l) => normalizeKey(l.name) === key)!;
+          return { key, name: capitalize(line.name), defaultUnit: line.unit, section: guessSection(line.name) };
+        }),
+      )
+      .onConflictDoNothing();
+  }
+  const byKey = missing.length ? await catalogByKey() : known;
 
   let recipeId = id;
   if (recipeId) {
@@ -269,14 +264,17 @@ export async function saveRecipe(_prev: RecipeFormState, formData: FormData): Pr
       return { recipeId: recipeId!, ingredientId: ing.id, qty: l.qty, unit, position };
     }),
   );
-  redirect(`/recetas/${recipeId}?guardada=${id ? "editada" : "nueva"}`);
+  revalidatePath(`/recetas/${recipeId}`);
+  revalidatePath(`/recetas/${recipeId}/editar`);
+  return { location: `/recetas/${recipeId}?guardada=${id ? "editada" : "nueva"}` };
 }
 
 export async function deleteRecipe(input: { id: number }) {
   await assertAccess();
   const { id } = z.object({ id: idSchema }).parse(input);
   await getDb().delete(recipes).where(eq(recipes.id, id));
-  redirect("/recetas?eliminada=1");
+  revalidatePath(`/recetas/${id}`);
+  revalidatePath(`/recetas/${id}/editar`);
 }
 
 // ---------- Compras ----------
@@ -295,7 +293,6 @@ export async function setChecked(input: { weekStart: string; itemKey: string; ch
       .delete(shoppingChecks)
       .where(and(eq(shoppingChecks.weekPlanId, weekPlanId), eq(shoppingChecks.itemKey, data.itemKey)));
   }
-  refresh();
 }
 
 export async function uncheckAll(input: { weekStart: string }) {
@@ -303,20 +300,53 @@ export async function uncheckAll(input: { weekStart: string }) {
   const { weekStart } = z.object({ weekStart: weekStartSchema }).parse(input);
   const db = getDb();
   const weekPlanId = await getWeekPlanId(weekStart);
-  if (weekPlanId) await db.delete(shoppingChecks).where(eq(shoppingChecks.weekPlanId, weekPlanId));
-  await db.update(householdItems).set({ checked: false });
-  refresh();
+  await db.transaction(async (tx) => {
+    if (weekPlanId) await tx.delete(shoppingChecks).where(eq(shoppingChecks.weekPlanId, weekPlanId));
+    await tx.update(householdItems).set({ checked: false });
+  });
+}
+
+/**
+ * Catálogo de ingredientes por clave normalizada. Si quedaron duplicados de antes
+ * ("Zanahoria" y "Zanahorias"), gana el más antiguo.
+ */
+async function catalogByKey() {
+  const all = await getDb().select().from(ingredients).orderBy(asc(ingredients.id));
+  const map = new Map<string, (typeof all)[number]>();
+  for (const ing of all) {
+    const key = normalizeKey(ing.key);
+    if (!map.has(key)) map.set(key, ing);
+  }
+  return map;
+}
+
+/** Todas las filas que representan al mismo ingrediente (normalmente una sola). */
+async function ingredientIds(name: string): Promise<number[]> {
+  const key = normalizeKey(name);
+  const all = await getDb().select({ id: ingredients.id, key: ingredients.key }).from(ingredients);
+  return all.filter((i) => normalizeKey(i.key) === key).map((i) => i.id);
 }
 
 export async function setAtHome(input: { name: string; atHome: boolean }) {
   await assertAccess();
   const data = z.object({ name: z.string().trim().min(1).max(120), atHome: z.boolean() }).parse(input);
   const db = getDb();
-  const [ing] = await db.select().from(ingredients).where(eq(ingredients.key, normalizeKey(data.name)));
-  if (!ing) return;
-  if (data.atHome) await db.insert(pantryItems).values({ ingredientId: ing.id }).onConflictDoNothing();
-  else await db.delete(pantryItems).where(eq(pantryItems.ingredientId, ing.id));
-  refresh();
+  const ids = await ingredientIds(data.name);
+  if (!ids.length) throw new Error("No se encontró el ingrediente.");
+  if (data.atHome) await db.insert(pantryItems).values({ ingredientId: ids[0] }).onConflictDoNothing();
+  else await db.delete(pantryItems).where(inArray(pantryItems.ingredientId, ids));
+}
+
+/** Cambia la sección del súper de un ingrediente; queda guardada para todas las semanas. */
+export async function setIngredientSection(input: { name: string; section: string }) {
+  await assertAccess();
+  const data = z.object({ name: z.string().trim().min(1).max(120), section: z.string().trim().min(1).max(60) }).parse(input);
+  const db = getDb();
+  const order = await db.select().from(storeSections);
+  const valid = new Set([...DEFAULT_SECTIONS, ...order.map((o) => o.section)]);
+  if (!valid.has(data.section)) throw new Error("Sección desconocida");
+  const ids = await ingredientIds(data.name);
+  if (ids.length) await db.update(ingredients).set({ section: data.section }).where(inArray(ingredients.id, ids));
 }
 
 const categorySchema = z.enum(HOUSEHOLD_CATEGORIES.map((c) => c.id) as [string, ...string[]]);
@@ -325,31 +355,40 @@ export async function addHouseholdItem(input: { name: string; category: string }
   await assertAccess();
   const data = z.object({ name: z.string().trim().min(1, "Escribí un producto.").max(80), category: categorySchema }).parse(input);
   const db = getDb();
-  const existing = await db.select({ id: householdItems.id, name: householdItems.name }).from(householdItems);
-  if (existing.some((e) => normalizeKey(e.name) === normalizeKey(data.name))) return { added: false };
-  await db.insert(householdItems).values({ name: capitalize(data.name), category: data.category });
-  refresh();
-  return { added: true };
+  const columns = {
+    id: householdItems.id,
+    name: householdItems.name,
+    category: householdItems.category,
+    checked: householdItems.checked,
+  };
+  return db.transaction(async (tx) => {
+    // Serializa las altas para que dos dispositivos no agreguen el mismo producto.
+    await tx.execute(sql`select pg_advisory_xact_lock(461147)`);
+    const items = await tx.select(columns).from(householdItems);
+    const existing = items.find((item) => normalizeKey(item.name) === normalizeKey(data.name));
+    if (existing) return { added: false, item: existing };
+    const [item] = await tx.insert(householdItems)
+      .values({ name: capitalize(data.name), category: data.category })
+      .returning(columns);
+    return { added: true, item };
+  });
 }
 
 export async function setHouseholdChecked(input: { id: number; checked: boolean }) {
   await assertAccess();
   const data = z.object({ id: idSchema, checked: z.boolean() }).parse(input);
   await getDb().update(householdItems).set({ checked: data.checked }).where(eq(householdItems.id, data.id));
-  refresh();
 }
 
 export async function removeHouseholdItem(input: { id: number }) {
   await assertAccess();
   const { id } = z.object({ id: idSchema }).parse(input);
   await getDb().delete(householdItems).where(eq(householdItems.id, id));
-  refresh();
 }
 
 export async function clearBoughtHousehold() {
   await assertAccess();
   await getDb().delete(householdItems).where(eq(householdItems.checked, true));
-  refresh();
 }
 
 export async function saveStoreOrder(input: { sections: string[] }) {
@@ -357,7 +396,8 @@ export async function saveStoreOrder(input: { sections: string[] }) {
   const { sections } = z.object({ sections: z.array(z.string().min(1).max(60)).min(1).max(30) }).parse(input);
   const db = getDb();
   const all = [...sections, ...DEFAULT_SECTIONS.filter((s) => !sections.includes(s))];
-  await db.delete(storeSections);
-  await db.insert(storeSections).values(all.map((section, position) => ({ section, position })));
-  refresh();
+  await db.transaction(async (tx) => {
+    await tx.delete(storeSections);
+    await tx.insert(storeSections).values(all.map((section, position) => ({ section, position })));
+  });
 }

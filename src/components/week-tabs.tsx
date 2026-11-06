@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 
 /** Selector "Esta semana / Semana que viene" como links (la semana va en la URL). */
@@ -12,8 +14,11 @@ export function WeekTabs({ base, offset, ranges }: { base: string; offset: numbe
             role="tab"
             aria-selected={on}
             href={`${base}?w=${o}`}
-            replace
-            scroll={false}
+            onClick={(event) => {
+              if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+              event.preventDefault();
+              window.history.replaceState(null, "", `${base}?w=${o}`);
+            }}
             className={`flex h-11 flex-col items-center justify-center rounded-full leading-tight ${
               on ? "bg-ink text-white" : "text-ink"
             }`}

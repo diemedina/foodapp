@@ -25,9 +25,9 @@ export function appTimeZone(): string {
 }
 
 /** Fecha de hoy en la zona horaria de la app. */
-export function todayISO(now: Date = new Date()): string {
+export function todayISO(now: Date = new Date(), timeZone = appTimeZone()): string {
   return new Intl.DateTimeFormat("en-CA", {
-    timeZone: appTimeZone(),
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -35,9 +35,9 @@ export function todayISO(now: Date = new Date()): string {
 }
 
 /** Hora actual (0-23) en la zona horaria de la app. */
-export function hourNow(now: Date = new Date()): number {
+export function hourNow(now: Date = new Date(), timeZone = appTimeZone()): number {
   return Number(
-    new Intl.DateTimeFormat("en-US", { timeZone: appTimeZone(), hour: "numeric", hourCycle: "h23" }).format(now),
+    new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now),
   );
 }
 

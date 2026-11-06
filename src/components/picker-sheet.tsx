@@ -5,6 +5,7 @@ import { addDays, dayOfMonth } from "@/lib/dates";
 import { DAY_SHORT, DAYS, mealOf, slotKey } from "@/lib/meals";
 import { lastUseBadge, leftoverCandidates, rankRecipesForSlot } from "@/lib/planning";
 import type { MealId, PlanMap, Recipe, Usage } from "@/lib/types";
+import { writeAppData } from "@/lib/app-store";
 import { clearSlot, moveSlot, setSlot } from "@/server/actions";
 import { CheckCircle } from "./check-circle";
 import { HistoryIcon, LeftoverIcon, StarIcon } from "./icons";
@@ -59,7 +60,7 @@ export function PickerSheet({
     startTransition(async () => {
       updatePlan(update);
       try {
-        await fn();
+        await writeAppData(fn);
         toast(message);
       } catch (e) {
         toast(e instanceof Error ? e.message : "No se pudo guardar.", "error");

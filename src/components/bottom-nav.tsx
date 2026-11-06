@@ -16,7 +16,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Navegación principal"
-      className="glass fixed inset-x-4 bottom-[calc(18px+env(safe-area-inset-bottom))] z-40 mx-auto grid h-[72px] max-w-[calc(28rem-2rem)] grid-cols-4 items-center gap-1 rounded-[28px] bg-white/75 px-2"
+      className="glass fixed inset-x-4 bottom-[12px] z-40 mx-auto grid h-[72px] max-w-[calc(28rem-2rem)] grid-cols-4 items-center gap-1 rounded-[28px] bg-white/75 px-2"
       style={{ viewTransitionName: "bottom-nav" }}
     >
       {ITEMS.map(({ href, label, Icon, match }) => {

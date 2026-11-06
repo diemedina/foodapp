@@ -1,11 +1,14 @@
 "use client";
 
-import { useId, useOptimistic, useState, useTransition } from "react";
+import { useId, useState, useTransition } from "react";
 import { CheckCircle } from "@/components/check-circle";
-import { BagIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, HomeIcon, PlusIcon, SortIcon } from "@/components/icons";
+import { BagIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, DotsIcon, HomeIcon, PlusIcon, SortIcon } from "@/components/icons";
 import { Sheet } from "@/components/sheet";
 import { buzz, useToast } from "@/components/toast";
 import { WeekTabs } from "@/components/week-tabs";
+import type { AppData } from "@/lib/app-data";
+import { writeAppData } from "@/lib/app-store";
+import { capitalize, normalizeKey } from "@/lib/units";
 import { HOUSEHOLD_CATEGORIES, householdCategory, sectionDot } from "@/lib/sections";
 import type { ShoppingList } from "@/lib/shopping";
 import type { HouseholdItem } from "@/lib/types";
@@ -15,15 +18,23 @@ import {
   removeHouseholdItem,
   saveStoreOrder,
   setAtHome,
+  setIngredientSection,
   setChecked,
   setHouseholdChecked,
   uncheckAll,
 } from "@/server/actions";
 
-type Patch =
-  | { type: "check"; key: string; checked: boolean }
-  | { type: "home"; checked: boolean; id: number }
-  | { type: "uncheckAll" };
+type ShoppingData = AppData["shopping"];
+
+function shoppingPatch(update: (shopping: ShoppingData) => ShoppingData) {
+  return (data: AppData): AppData => ({ ...data, shopping: update(data.shopping) });
+}
+
+function toggle(items: string[], key: string, on: boolean) {
+  return on ? [...new Set([...items, key])] : items.filter((item) => item !== key);
+}
+
+let nextTemporaryId = -1;
 
 export function ShoppingView(props: {
   offset: number;
@@ -35,37 +46,19 @@ export function ShoppingView(props: {
 }) {
   const { weekStart } = props;
   const toast = useToast();
-  const [, startTransition] = useTransition();
   const [showOrder, setShowOrder] = useState(false);
+  const [editing, setEditing] = useState<{ name: string; section: string } | null>(null);
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>("Limpieza");
   const householdInputId = useId();
 
-  // Tachar es inmediato en pantalla; el servidor confirma detrás.
-  const [state, applyPatch] = useOptimistic(
-    { list: props.list, household: props.household },
-    (cur, patch: Patch) => {
-      if (patch.type === "check") {
-        return {
-          ...cur,
-          list: {
-            ...cur.list,
-            groups: cur.list.groups.map((g) => ({
-              ...g,
-              items: g.items.map((i) => (i.key === patch.key ? { ...i, checked: patch.checked } : i)),
-            })),
-          },
-        };
-      }
-      if (patch.type === "home") {
-        return { ...cur, household: cur.household.map((h) => (h.id === patch.id ? { ...h, checked: patch.checked } : h)) };
-      }
-      return {
-        list: { ...cur.list, groups: cur.list.groups.map((g) => ({ ...g, items: g.items.map((i) => ({ ...i, checked: false })) })) },
-        household: cur.household.map((h) => ({ ...h, checked: false })),
-      };
-    },
-  );
+  const state = props;
+  const markAtHome = (name: string, atHome: boolean) =>
+    optimistic(
+      (shopping) => ({ ...shopping, pantry: toggle(shopping.pantry, normalizeKey(name), atHome) }),
+      () => setAtHome({ name, atHome }),
+      atHome ? `${name}: ya lo tenés en casa` : `${name} volvió a la lista`,
+    );
 
   const items = state.list.groups.flatMap((g) => g.items);
   const total = items.length + state.household.length;
@@ -73,28 +66,54 @@ export function ShoppingView(props: {
   const pending = total - done;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
-  const optimistic = (patch: Patch, fn: () => Promise<unknown>, message?: string) => {
+  async function optimistic(update: (shopping: ShoppingData) => ShoppingData, save: () => Promise<unknown>, message?: string) {
     buzz();
-    startTransition(async () => {
-      applyPatch(patch);
-      try {
-        await fn();
-        if (message) toast(message);
-      } catch {
-        toast("No se pudo guardar.", "error");
-      }
-    });
-  };
+    try {
+      await writeAppData(save, shoppingPatch(update));
+      if (message) toast(message);
+    } catch {
+      toast("No se pudo guardar. Se revirtió el cambio.", "error");
+    }
+  }
 
-  const plain = (fn: () => Promise<unknown>, message: string) =>
-    startTransition(async () => {
-      try {
-        await fn();
-        toast(message);
-      } catch (e) {
-        toast(e instanceof Error ? e.message : "No se pudo guardar.", "error");
-      }
-    });
+  async function plain(save: () => Promise<unknown>, message: string) {
+    try {
+      await writeAppData(save);
+      toast(message);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "No se pudo guardar.", "error");
+    }
+  }
+
+  async function addProduct() {
+    const value = name.trim();
+    if (!value || value.length > 80) return;
+    const key = normalizeKey(value);
+    if (state.household.some((item) => normalizeKey(item.name) === key)) {
+      toast(`${value} ya estaba en la lista`);
+      return;
+    }
+
+    const product = { id: nextTemporaryId--, name: capitalize(value), category, checked: false };
+    const withProduct = (item: HouseholdItem) => shoppingPatch((shopping) => (
+      shopping.household.some((existing) => existing.id === item.id || normalizeKey(existing.name) === key)
+        ? shopping
+        : { ...shopping, household: [...shopping.household, item] }
+    ));
+
+    setName("");
+    try {
+      const result = await writeAppData(
+        () => addHouseholdItem({ name: value, category }),
+        withProduct(product),
+        (data, saved) => withProduct(saved.item)(data),
+      );
+      toast(result.added ? `${value} agregado a la lista` : `${value} ya estaba en la lista`);
+    } catch {
+      setName((current) => current || value);
+      toast("No se pudo agregar el producto.", "error");
+    }
+  }
 
   return (
     <>
@@ -115,7 +134,15 @@ export function ShoppingView(props: {
           <button
             type="button"
             disabled={done === 0}
-            onClick={() => optimistic({ type: "uncheckAll" }, () => uncheckAll({ weekStart }), "Lista desmarcada")}
+            onClick={() => optimistic(
+              (shopping) => ({
+                ...shopping,
+                checks: { ...shopping.checks, [weekStart]: [] },
+                household: shopping.household.map((item) => ({ ...item, checked: false })),
+              }),
+              () => uncheckAll({ weekStart }),
+              "Lista desmarcada",
+            )}
             className="glass h-11 rounded-full px-4 text-[13px] font-bold disabled:opacity-50"
           >
             Desmarcar
@@ -165,8 +192,15 @@ export function ShoppingView(props: {
                     role="checkbox"
                     aria-checked={it.checked}
                     onClick={() =>
-                      optimistic({ type: "check", key: it.key, checked: !it.checked }, () =>
-                        setChecked({ weekStart, itemKey: it.key, checked: !it.checked }),
+                      optimistic(
+                        (shopping) => ({
+                          ...shopping,
+                          checks: {
+                            ...shopping.checks,
+                            [weekStart]: toggle(shopping.checks[weekStart] ?? [], it.key, !it.checked),
+                          },
+                        }),
+                        () => setChecked({ weekStart, itemKey: it.key, checked: !it.checked }),
                       )
                     }
                     className="flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2.5 pl-2 pr-1 text-left active:scale-100"
@@ -185,10 +219,18 @@ export function ShoppingView(props: {
                   <button
                     type="button"
                     aria-label={`Ya tengo ${it.name} en casa`}
-                    onClick={() => plain(() => setAtHome({ name: it.name, atHome: true }), `${it.name}: ya lo tenés en casa`)}
+                    onClick={() => markAtHome(it.name, true)}
                     className="flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
                   >
                     <HomeIcon className="size-[18px]" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Cambiar sección de ${it.name}`}
+                    onClick={() => setEditing({ name: it.name, section: g.section })}
+                    className="-ml-1.5 flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
+                  >
+                    <DotsIcon className="size-5" />
                   </button>
                 </div>
               ))}
@@ -208,14 +250,14 @@ export function ShoppingView(props: {
           </div>
           <div className="rounded-[24px] border border-dashed border-green-800/30 bg-green-200/55 px-2 py-1.5">
             {state.list.atHome.map((p, idx) => (
-              <div key={p.name} className={`flex min-h-[52px] items-center gap-2.5 py-1 pl-2 pr-1 ${idx ? "border-t border-green-800/10" : ""}`}>
+              <div key={p.key} className={`flex min-h-[52px] items-center gap-2.5 py-1 pl-2 pr-1 ${idx ? "border-t border-green-800/10" : ""}`}>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-sm font-bold">{p.name}</span>
                   <span className="text-xs text-[#4A5A4E]">{p.amount ? `${p.amount} para la semana` : "Sin cantidad cargada"}</span>
                 </span>
                 <button
                   type="button"
-                  onClick={() => plain(() => setAtHome({ name: p.name, atHome: false }), `${p.name} volvió a la lista`)}
+                  onClick={() => markAtHome(p.name, false)}
                   className="h-10 rounded-full border border-green-800/25 bg-white/80 px-3 text-xs font-extrabold text-green-800"
                 >
                   Lo necesito
@@ -247,17 +289,7 @@ export function ShoppingView(props: {
             className="flex gap-2"
             onSubmit={(e) => {
               e.preventDefault();
-              const value = name.trim();
-              if (!value) return;
-              setName("");
-              startTransition(async () => {
-                try {
-                  const res = await addHouseholdItem({ name: value, category });
-                  toast(res?.added ? `${value} agregado a la lista` : `${value} ya estaba en la lista`);
-                } catch {
-                  toast("No se pudo agregar.", "error");
-                }
-              });
+              void addProduct();
             }}
           >
             <label htmlFor={householdInputId} className="sr-only">
@@ -265,6 +297,7 @@ export function ShoppingView(props: {
             </label>
             <input
               id={householdInputId}
+              maxLength={80}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Agregar producto…"
@@ -306,9 +339,14 @@ export function ShoppingView(props: {
                       type="button"
                       role="checkbox"
                       aria-checked={h.checked}
+                      disabled={h.id < 0}
                       onClick={() =>
-                        optimistic({ type: "home", id: h.id, checked: !h.checked }, () =>
-                          setHouseholdChecked({ id: h.id, checked: !h.checked }),
+                        optimistic(
+                          (shopping) => ({
+                            ...shopping,
+                            household: shopping.household.map((item) => item.id === h.id ? { ...item, checked: !h.checked } : item),
+                          }),
+                          () => setHouseholdChecked({ id: h.id, checked: !h.checked }),
                         )
                       }
                       className="flex min-h-14 min-w-0 flex-1 items-center gap-3 px-0.5 py-2 text-left active:scale-100"
@@ -327,6 +365,7 @@ export function ShoppingView(props: {
                     <button
                       type="button"
                       aria-label={`Quitar ${h.name}`}
+                      disabled={h.id < 0}
                       onClick={() => plain(() => removeHouseholdItem({ id: h.id }), `${h.name} quitado`)}
                       className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted"
                     >
@@ -340,8 +379,71 @@ export function ShoppingView(props: {
         </div>
       </section>
 
-      <OrderSheet open={showOrder} onClose={() => setShowOrder(false)} initial={props.sectionOrder} />
+      <OrderSheet
+        key={JSON.stringify(props.sectionOrder)}
+        open={showOrder}
+        onClose={() => setShowOrder(false)}
+        initial={props.sectionOrder}
+      />
+      <ItemSheet
+        item={editing}
+        sections={props.sectionOrder}
+        onClose={() => setEditing(null)}
+        onSection={(name, section) => {
+          setEditing(null);
+          buzz();
+          plain(() => setIngredientSection({ name, section }), `${name} → ${section}`);
+        }}
+      />
     </>
+  );
+}
+
+/** Mover un producto a otra sección del súper (se recuerda para las próximas semanas). */
+function ItemSheet({
+  item,
+  sections,
+  onClose,
+  onSection,
+}: {
+  item: { name: string; section: string } | null;
+  sections: string[];
+  onClose: () => void;
+  onSection: (name: string, section: string) => void;
+}) {
+  return (
+    <Sheet open={item !== null} onClose={onClose} label={item ? `Sección de ${item.name}` : "Sección"}>
+      {item && (
+        <>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-[22px] font-extrabold tracking-tight">{item.name}</h2>
+            <span className="text-muted">¿En qué sección del súper lo buscás?</span>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap gap-2">
+              {sections.map((s) => {
+                const on = s === item.section;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => (on ? onClose() : onSection(item.name, s))}
+                    className={`pressable flex h-11 items-center gap-2 rounded-full px-4 text-sm font-semibold ${
+                      on ? "bg-ink text-white" : "border border-ink/5 bg-white/80"
+                    }`}
+                  >
+                    <span className="size-2.5 rounded-full" style={{ background: sectionDot(s) }} />
+                    {s}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="px-1 text-xs text-muted">Se recuerda para las próximas semanas.</span>
+          </div>
+        </>
+      )}
+    </Sheet>
   );
 }
 
@@ -398,7 +500,7 @@ function OrderSheet({ open, onClose, initial }: { open: boolean; onClose: () => 
         onClick={() =>
           startTransition(async () => {
             try {
-              await saveStoreOrder({ sections: order });
+              await writeAppData(() => saveStoreOrder({ sections: order }));
               toast("Recorrido guardado");
               onClose();
             } catch {

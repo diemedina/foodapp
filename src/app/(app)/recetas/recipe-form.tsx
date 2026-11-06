@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { writeAppData } from "@/lib/app-store";
 import { useActionState, useId, useLayoutEffect, useRef, useState } from "react";
 import { CheckIcon, ChevronLeftIcon } from "@/components/icons";
 import { MEALS } from "@/lib/meals";
@@ -12,7 +14,12 @@ export function RecipeForm({
 }: {
   initial?: { id: number; name: string; meals: MealId[]; ingredients: string };
 }) {
-  const [state, action, pending] = useActionState<RecipeFormState, FormData>(saveRecipe, {});
+  const router = useRouter();
+  const [state, action, pending] = useActionState<RecipeFormState, FormData>(async (previous, formData) => {
+    const result = await writeAppData(() => saveRecipe(previous, formData));
+    if (result.location) router.push(result.location);
+    return result;
+  }, {});
   const [meals, setMeals] = useState<MealId[]>(initial?.meals ?? ["almuerzo", "cena"]);
   const editing = Boolean(initial);
   const ids = { name: useId(), ingredients: useId() };

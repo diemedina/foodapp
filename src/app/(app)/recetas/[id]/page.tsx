@@ -1,27 +1,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ViewTransition } from "react";
 import { FlashToast } from "@/components/flash-toast";
 import { CalendarIcon, ChevronLeftIcon, EditIcon, FlaskIcon, MealIcon } from "@/components/icons";
+import { Suspense, ViewTransition } from "react";
 import { PageTransition } from "@/components/page-transition";
-import { weekStartOf, todayISO } from "@/lib/dates";
+import { DetailSkeleton } from "@/components/skeletons";
 import { mealOf, mealsText } from "@/lib/meals";
 import { fmtAmount } from "@/lib/units";
-import { getPlan, getRecipe } from "@/server/queries";
+import { getRecipe } from "@/server/queries";
 import { DeleteRecipeButton } from "./delete-button";
+import { RecipeUsage } from "./recipe-usage";
 
-export default async function RecipePage(props: PageProps<"/recetas/[id]">) {
+async function RecipeContent(props: { params: PageProps<"/recetas/[id]">["params"]; searchParams: PageProps<"/recetas/[id]">["searchParams"] }) {
   const { id } = await props.params;
   const search = await props.searchParams;
   const recipe = await getRecipe(Number(id));
   if (!recipe) notFound();
-  const plan = await getPlan(weekStartOf(todayISO()));
-  const uses = Object.values(plan).filter((s) => s.recipeId === recipe.id).length;
   const m = mealOf(recipe.meals[0] ?? "almuerzo");
   const flash = search.guardada === "nueva" ? "Receta guardada" : search.guardada === "editada" ? "Cambios guardados" : null;
 
   return (
-    <PageTransition>
+    <>
       <FlashToast message={flash} />
       <Link href="/recetas" className="pressable flex h-11 items-center gap-1 self-start rounded-full pl-1 pr-3 text-sm font-bold">
         <ChevronLeftIcon className="size-5" />
@@ -56,10 +55,7 @@ export default async function RecipePage(props: PageProps<"/recetas/[id]">) {
           <span className="flex size-9 items-center justify-center rounded-xl bg-[#FFF1C9] text-[#7A5300]">
             <CalendarIcon className="size-[18px]" />
           </span>
-          <span className="flex flex-col">
-            <strong className="text-[15px]">{uses}</strong>
-            <span className="text-xs text-muted">{uses === 1 ? "vez esta semana" : "veces esta semana"}</span>
-          </span>
+          <RecipeUsage id={recipe.id} />
         </div>
       </div>
 
@@ -85,6 +81,17 @@ export default async function RecipePage(props: PageProps<"/recetas/[id]">) {
           Editar
         </Link>
       </div>
+    </>
+  );
+}
+
+/** La pantalla se muestra al instante con su esqueleto y los datos llegan por streaming. */
+export default function RecipePage(props: PageProps<"/recetas/[id]">) {
+  return (
+    <PageTransition>
+      <Suspense fallback={<DetailSkeleton />}>
+        <RecipeContent params={props.params} searchParams={props.searchParams} />
+      </Suspense>
     </PageTransition>
   );
 }

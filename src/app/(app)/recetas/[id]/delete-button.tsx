@@ -1,5 +1,7 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { writeAppData } from "@/lib/app-store";
 import { useState, useTransition } from "react";
 import { TrashIcon } from "@/components/icons";
 import { useToast } from "@/components/toast";
@@ -8,6 +10,7 @@ import { deleteRecipe } from "@/server/actions";
 /** Pide un segundo toque para confirmar, sin diálogos del navegador. */
 export function DeleteRecipeButton({ id }: { id: number }) {
   const toast = useToast();
+  const router = useRouter();
   const [armed, setArmed] = useState(false);
   const [pending, startTransition] = useTransition();
   return (
@@ -23,11 +26,10 @@ export function DeleteRecipeButton({ id }: { id: number }) {
         }
         startTransition(async () => {
           try {
-            await deleteRecipe({ id });
-          } catch (e) {
-            // redirect() también llega acá como excepción especial: solo avisamos si es un error real.
-            if (e instanceof Error && !("digest" in e)) toast("No se pudo eliminar.", "error");
-            else throw e;
+            await writeAppData(() => deleteRecipe({ id }));
+            router.push("/recetas?eliminada=1");
+          } catch {
+            toast("No se pudo eliminar.", "error");
           }
         });
       }}

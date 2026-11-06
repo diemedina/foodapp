@@ -57,8 +57,30 @@ export function fmtAmount(qty: number | null | undefined, unit: string | null | 
   return `${num(q)} ${UNIT_LABEL[unit] ?? unit}`;
 }
 
+export function stripAccents(text: string): string {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+/** Pasa una palabra a singular de forma aproximada: "limones" → "limon", "nueces" → "nuez", "papas" → "papa". */
+export function singularize(word: string): string {
+  if (word.length <= 3) return word;
+  if (word.endsWith("ces")) return `${word.slice(0, -3)}z`;
+  if (/[lnrdj]es$/.test(word)) return word.slice(0, -2);
+  if (word.endsWith("s") && !word.endsWith("ss")) return word.slice(0, -1);
+  return word;
+}
+
+/**
+ * Clave de un ingrediente para reconocerlo aunque se escriba distinto:
+ * sin mayúsculas, sin acentos y en singular ("Zanahorias" = "zanahoria", "Brócoli" = "brocoli").
+ */
 export function normalizeKey(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
+  return stripAccents(name.toLowerCase())
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(singularize)
+    .join(" ");
 }
 
 export function capitalize(text: string): string {

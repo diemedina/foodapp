@@ -10,6 +10,7 @@ import { addDays, dayOfMonth } from "@/lib/dates";
 import { DAY_SHORT, DAYS, MEALS, slotKey } from "@/lib/meals";
 import { autofillPlan, leftoverLinks, plannedCount } from "@/lib/planning";
 import type { PlanMap, Recipe, Template, Usage } from "@/lib/types";
+import { writeAppData } from "@/lib/app-store";
 import { applyTemplate, autofillWeek, clearWeek, copyWeek, deleteTemplate, saveTemplate } from "@/server/actions";
 
 export function WeekPlanner(props: {
@@ -43,7 +44,7 @@ export function WeekPlanner(props: {
     startTransition(async () => {
       try {
         if (update) updatePlan(update);
-        const res = await fn();
+        const res = await writeAppData(fn);
         toast(message(res));
       } catch (e) {
         toast(e instanceof Error ? e.message : "No se pudo guardar.", "error");
@@ -304,7 +305,7 @@ function TemplatesSheet({
           if (!name.trim()) return setError("Poné un nombre para el plan.");
           startTransition(async () => {
             try {
-              await saveTemplate({ name, weekStart: weekStart });
+              await writeAppData(() => saveTemplate({ name, weekStart }));
               toast(`Guardamos "${name.trim()}"`);
               setName("");
               setError("");
@@ -355,7 +356,7 @@ function TemplatesSheet({
                   disabled={pending}
                   onClick={() =>
                     startTransition(async () => {
-                      await deleteTemplate({ templateId: t.id });
+                      await writeAppData(() => deleteTemplate({ templateId: t.id }));
                       toast("Plan borrado");
                     })
                   }

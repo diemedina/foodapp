@@ -1,35 +1,44 @@
+"use client";
+
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { AppDataFallback } from "@/components/app-data";
 import { PageTransition } from "@/components/page-transition";
-import { dow, weekStartOf, rangeText, todayISO } from "@/lib/dates";
-import { buildShoppingList } from "@/lib/shopping";
-import { getPlan, getRecipes, getShoppingState } from "@/server/queries";
+import { ListSkeleton } from "@/components/skeletons";
+import { shoppingListFor } from "@/lib/app-data";
+import { useAppStore } from "@/lib/app-store";
+import { dow, rangeText, todayISO } from "@/lib/dates";
 import { ShoppingView } from "./shopping-view";
 
-export default async function ShoppingPage(props: PageProps<"/compras">) {
-  const params = await props.searchParams;
-  const recipes = await getRecipes();
-  const today = todayISO();
-  const w = params.w === "1" ? 1 : params.w === "0" ? 0 : dow(today) >= 4 ? 1 : 0;
-  const weekStart = weekStartOf(today, w);
-  const [plan, state] = await Promise.all([getPlan(weekStart), getShoppingState(weekStart)]);
-  const list = buildShoppingList({
-    plan,
-    recipesById: new Map(recipes.map((r) => [r.id, r])),
-    pantry: state.pantry,
-    sectionOrder: state.order,
-    checks: state.checks,
-  });
+function ShoppingContent() {
+  const params = useSearchParams();
+  const data = useAppStore((state) => state.data);
+  if (!data) return <AppDataFallback><ListSkeleton /></AppDataFallback>;
+
+  const today = todayISO(new Date(), data.timeZone);
+  const week = params.get("w");
+  const offset = week === "1" ? 1 : week === "0" ? 0 : dow(today) >= 4 ? 1 : 0;
+  const weekStart = data.weeks[offset];
 
   return (
+    <ShoppingView
+      key={weekStart}
+      offset={offset}
+      weekStart={weekStart}
+      ranges={data.weeks.map(rangeText)}
+      list={shoppingListFor(data, weekStart)}
+      household={data.shopping.household}
+      sectionOrder={data.shopping.order}
+    />
+  );
+}
+
+export default function ShoppingPage() {
+  return (
     <PageTransition>
-      <ShoppingView
-        key={weekStart}
-        offset={w}
-        weekStart={weekStart}
-        ranges={[rangeText(weekStartOf(today)), rangeText(weekStartOf(today, 1))]}
-        list={list}
-        household={state.household}
-        sectionOrder={state.order}
-      />
+      <Suspense fallback={<ListSkeleton />}>
+        <ShoppingContent />
+      </Suspense>
     </PageTransition>
   );
 }

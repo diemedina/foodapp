@@ -1,3 +1,4 @@
+import { normalizeKey } from "@/lib/units";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import {
@@ -21,10 +22,10 @@ function toMeals(values: string[]): MealId[] {
   return sortMeals(values.filter(isMealId));
 }
 
-export async function getRecipes(): Promise<Recipe[]> {
+export async function getRecipes(id?: number): Promise<Recipe[]> {
   const db = getDb();
   const [rows, ings] = await Promise.all([
-    db.select().from(recipes).orderBy(asc(recipes.name)),
+    db.select().from(recipes).where(id === undefined ? undefined : eq(recipes.id, id)).orderBy(asc(recipes.name)),
     db
       .select({
         recipeId: recipeIngredients.recipeId,
@@ -35,6 +36,7 @@ export async function getRecipes(): Promise<Recipe[]> {
       })
       .from(recipeIngredients)
       .innerJoin(ingredients, eq(recipeIngredients.ingredientId, ingredients.id))
+      .where(id === undefined ? undefined : eq(recipeIngredients.recipeId, id))
       .orderBy(asc(recipeIngredients.recipeId), asc(recipeIngredients.position)),
   ]);
   const byRecipe = new Map<number, Recipe["ings"]>();
@@ -47,8 +49,9 @@ export async function getRecipes(): Promise<Recipe[]> {
 }
 
 export async function getRecipe(id: number): Promise<Recipe | null> {
-  const all = await getRecipes();
-  return all.find((r) => r.id === id) ?? null;
+  if (!Number.isSafeInteger(id) || id < 1 || id > 2_147_483_647) return null;
+  const [recipe] = await getRecipes(id);
+  return recipe ?? null;
 }
 
 export async function getPlan(weekStart: string): Promise<PlanMap> {
@@ -85,23 +88,23 @@ export async function getWeekPlanId(weekStart: string): Promise<number | null> {
   return row?.id ?? null;
 }
 
-export async function getShoppingState(weekStart: string) {
+export async function getShoppingState(weeks: string[]) {
   const db = getDb();
-  const planId = await getWeekPlanId(weekStart);
   const [checks, pantry, household, order] = await Promise.all([
-    planId
-      ? db.select({ key: shoppingChecks.itemKey }).from(shoppingChecks).where(eq(shoppingChecks.weekPlanId, planId))
-      : Promise.resolve([]),
+    db.select({ week: weekPlans.weekStart, key: shoppingChecks.itemKey })
+      .from(shoppingChecks)
+      .innerJoin(weekPlans, eq(shoppingChecks.weekPlanId, weekPlans.id))
+      .where(inArray(weekPlans.weekStart, weeks)),
     db
       .select({ key: ingredients.key })
       .from(pantryItems)
       .innerJoin(ingredients, eq(pantryItems.ingredientId, ingredients.id)),
-    db.select().from(householdItems).orderBy(asc(householdItems.createdAt)),
+    db.select().from(householdItems).orderBy(asc(householdItems.createdAt), asc(householdItems.id)),
     getStoreOrder(),
   ]);
   return {
-    checks: new Set(checks.map((c) => c.key)),
-    pantry: new Set(pantry.map((p) => p.key)),
+    checks: Object.fromEntries(weeks.map((week) => [week, checks.filter((c) => c.week === week).map((c) => c.key)])),
+    pantry: [...new Set(pantry.map((p) => normalizeKey(p.key)))],
     household: household.map<HouseholdItem>((h) => ({ id: h.id, name: h.name, category: h.category, checked: h.checked })),
     order,
   };

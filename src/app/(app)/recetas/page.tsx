@@ -1,24 +1,32 @@
+"use client";
+
 import Link from "next/link";
-import { ViewTransition } from "react";
+import { useSearchParams } from "next/navigation";
+import { AppDataFallback } from "@/components/app-data";
+import { useAppStore } from "@/lib/app-store";
 import { FlashToast } from "@/components/flash-toast";
 import { MealIcon, PlusIcon } from "@/components/icons";
+import { Suspense, ViewTransition } from "react";
 import { PageTransition } from "@/components/page-transition";
-import { weekStartOf, todayISO } from "@/lib/dates";
+import { GridSkeleton } from "@/components/skeletons";
 import { isMealId, MEALS, mealOf, mealsText } from "@/lib/meals";
-import { getPlan, getRecipes } from "@/server/queries";
 
-export default async function RecipesPage(props: PageProps<"/recetas">) {
-  const params = await props.searchParams;
-  const filter = isMealId(params.comida) ? params.comida : null;
-  const recipes = await getRecipes();
-  const plan = await getPlan(weekStartOf(todayISO()));
+function RecipesContent() {
+  const params = useSearchParams();
+  const data = useAppStore((state) => state.data);
+  if (!data) return <AppDataFallback><GridSkeleton /></AppDataFallback>;
+
+  const meal = params.get("comida");
+  const filter = isMealId(meal) ? meal : null;
+  const { recipes } = data;
+  const plan = data.plans[data.weeks[0]];
   const uses = new Map<number, number>();
   for (const s of Object.values(plan)) uses.set(s.recipeId, (uses.get(s.recipeId) ?? 0) + 1);
   const visible = recipes.filter((r) => !filter || r.meals.includes(filter));
 
   return (
-    <PageTransition>
-      <FlashToast message={params.eliminada ? "Receta eliminada" : null} />
+    <>
+      <FlashToast message={params.get("eliminada") ? "Receta eliminada" : null} />
       <div className="flex items-end justify-between gap-2 px-1 pt-2">
         <div className="flex flex-col gap-1">
           <h1 className="text-[32px] font-extrabold leading-none tracking-tight">Recetas</h1>
@@ -37,17 +45,16 @@ export default async function RecipesPage(props: PageProps<"/recetas">) {
         {[{ id: null, name: "Todas", bg: "#1A1A1A", fg: "#FFFFFF" }, ...MEALS].map((f) => {
           const on = f.id === filter;
           return (
-            <Link
+            <button
               key={f.name}
-              href={f.id ? `/recetas?comida=${f.id}` : "/recetas"}
-              replace
-              scroll={false}
-              aria-current={on ? "true" : undefined}
+              type="button"
+              onClick={() => window.history.replaceState(null, "", f.id ? `/recetas?comida=${f.id}` : "/recetas")}
+              aria-pressed={on}
               className={`pressable flex h-11 shrink-0 items-center rounded-full px-[18px] text-sm font-semibold ${on ? "" : "glass"}`}
               style={on ? { background: f.bg, color: f.fg, border: `1px solid ${f.id ? f.fg : "#1A1A1A"}` } : undefined}
             >
               {f.name}
-            </Link>
+            </button>
           );
         })}
       </nav>
@@ -89,6 +96,16 @@ export default async function RecipesPage(props: PageProps<"/recetas">) {
           })}
         </div>
       )}
+    </>
+  );
+}
+
+export default function RecipesPage() {
+  return (
+    <PageTransition>
+      <Suspense fallback={<GridSkeleton />}>
+        <RecipesContent />
+      </Suspense>
     </PageTransition>
   );
 }

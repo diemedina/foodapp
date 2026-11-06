@@ -15,7 +15,7 @@ export type ShoppingGroup = { section: string; dot: string; items: ShoppingItem[
 export type ShoppingList = {
   groups: ShoppingGroup[];
   /** Ingredientes de la semana que ya hay en casa (no se compran). */
-  atHome: { name: string; amount: string }[];
+  atHome: { key: string; name: string; amount: string }[];
   total: number;
   pending: number;
 };
@@ -86,7 +86,7 @@ export function buildShoppingList(input: {
   };
 
   const all = [...acc.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
-  const atHome = all.filter((a) => pantry.has(a.nameKey)).map((a) => ({ name: a.name, amount: amountOf(a) }));
+  const atHome = all.filter((a) => pantry.has(a.nameKey)).map((a) => ({ key: a.key, name: a.name, amount: amountOf(a) }));
   const toBuy = all.filter((a) => !pantry.has(a.nameKey));
 
   const sections = [...sectionOrder];

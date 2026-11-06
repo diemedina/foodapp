@@ -54,6 +54,11 @@ export const ChevronDownIcon = (p: IconProps) => (
     <path d="M6 9l6 6 6-6" />
   </Svg>
 );
+export const DotsIcon = (p: IconProps) => (
+  <Svg {...p} strokeWidth={p.strokeWidth ?? 2.6}>
+    <path d="M5 12h.01M12 12h.01M19 12h.01" />
+  </Svg>
+);
 export const HomeIcon = (p: IconProps) => (
   <Svg {...p} strokeWidth={p.strokeWidth ?? 1.9}>
     <path d="M3 11l9-7 9 7v8a2 2 0 0 1-2 2h-4v-6h-6v6H5a2 2 0 0 1-2-2v-8z" />
