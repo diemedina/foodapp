@@ -30,3 +30,13 @@ export function sectionFromCategory(category: string) {
   // Las categorías antiguas (Limpieza, Higiene, Hogar y Otros) pertenecen a Para la casa.
   return isSectionCategory(category) ? category.slice("section:".length) : HOUSEHOLD_SECTION;
 }
+
+// La despensa de productos manuales se guarda junto al producto, sin depender de la semana.
+export const HOUSEHOLD_AT_HOME_CATEGORY = "pantry:household";
+
+export function householdPurchaseState(atHome: boolean) {
+  return {
+    category: atHome ? HOUSEHOLD_AT_HOME_CATEGORY : sectionCategory(HOUSEHOLD_SECTION),
+    checked: false,
+  };
+}

@@ -9,7 +9,7 @@ import { WeekTabs } from "@/components/week-tabs";
 import type { AppData } from "@/lib/app-data";
 import { useAppStore, writeAppData } from "@/lib/app-store";
 import { capitalize, normalizeKey } from "@/lib/units";
-import { sectionCategory, sectionDot } from "@/lib/sections";
+import { HOUSEHOLD_SECTION, householdPurchaseState, sectionCategory, sectionDot } from "@/lib/sections";
 import type { ShoppingList } from "@/lib/shopping";
 import type { HouseholdItem } from "@/lib/types";
 import {
@@ -19,6 +19,7 @@ import {
   setAtHome,
   setIngredientSection,
   setChecked,
+  setHouseholdAtHome,
   setHouseholdChecked,
   uncheckAll,
 } from "@/server/actions";
@@ -56,6 +57,16 @@ export function ShoppingView(props: {
     optimistic(
       (shopping) => ({ ...shopping, pantry: toggle(shopping.pantry, normalizeKey(name), atHome) }),
       () => setAtHome({ name, atHome }),
+      atHome ? `${name}: ya lo tenés en casa` : `${name} volvió a la lista`,
+    );
+
+  const markHouseholdAtHome = (id: number, name: string, atHome: boolean) =>
+    optimistic(
+      (shopping) => ({
+        ...shopping,
+        household: shopping.household.map((item) => item.id === id ? { ...item, ...householdPurchaseState(atHome) } : item),
+      }),
+      () => setHouseholdAtHome({ id, atHome }),
       atHome ? `${name}: ya lo tenés en casa` : `${name} volvió a la lista`,
     );
 
@@ -249,25 +260,28 @@ export function ShoppingView(props: {
                         </span>
                       )}
                     </button>
+                    {(manualId === undefined || g.section === HOUSEHOLD_SECTION) && (
+                      <button
+                        type="button"
+                        aria-label={`Ya tengo ${it.name} en casa`}
+                        disabled={manualId !== undefined && manualId < 0}
+                        onClick={() => manualId === undefined
+                          ? markAtHome(it.name, true)
+                          : markHouseholdAtHome(manualId, it.name, true)}
+                        className="flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
+                      >
+                        <HomeIcon className="size-[18px]" />
+                      </button>
+                    )}
                     {manualId === undefined ? (
-                      <>
-                        <button
-                          type="button"
-                          aria-label={`Ya tengo ${it.name} en casa`}
-                          onClick={() => markAtHome(it.name, true)}
-                          className="flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
-                        >
-                          <HomeIcon className="size-[18px]" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={`Cambiar sección de ${it.name}`}
-                          onClick={() => setEditing({ name: it.name, section: g.section })}
-                          className="-ml-1.5 flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
-                        >
-                          <DotsIcon className="size-5" />
-                        </button>
-                      </>
+                      <button
+                        type="button"
+                        aria-label={`Cambiar sección de ${it.name}`}
+                        onClick={() => setEditing({ name: it.name, section: g.section })}
+                        className="-ml-1.5 flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
+                      >
+                        <DotsIcon className="size-5" />
+                      </button>
                     ) : (
                       <button
                         type="button"
@@ -308,11 +322,16 @@ export function ShoppingView(props: {
               <div key={p.key} className={`flex min-h-[52px] items-center gap-2.5 py-1 pl-2 pr-1 ${idx ? "border-t border-green-800/10" : ""}`}>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-sm font-bold">{p.name}</span>
-                  <span className="text-xs text-[#4A5A4E]">{p.amount ? `${p.amount} para la semana` : "Sin cantidad cargada"}</span>
+                  {p.manualId === undefined && (
+                    <span className="text-xs text-[#4A5A4E]">{p.amount ? `${p.amount} para la semana` : "Sin cantidad cargada"}</span>
+                  )}
                 </span>
                 <button
                   type="button"
-                  onClick={() => markAtHome(p.name, false)}
+                  aria-label={`Lo necesito: ${p.name}`}
+                  onClick={() => p.manualId === undefined
+                    ? markAtHome(p.name, false)
+                    : markHouseholdAtHome(p.manualId, p.name, false)}
                   className="h-10 rounded-full border border-green-800/25 bg-white/80 px-3 text-xs font-extrabold text-green-800"
                 >
                   Lo necesito

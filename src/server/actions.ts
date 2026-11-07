@@ -22,7 +22,15 @@ import {
 import { dow, isISODate } from "@/lib/dates";
 import { MEAL_IDS, parseSlotKey, sortMeals } from "@/lib/meals";
 import { autofillPlan } from "@/lib/planning";
-import { DEFAULT_SECTIONS, isSectionCategory, sectionFromCategory } from "@/lib/sections";
+import {
+  DEFAULT_SECTIONS,
+  HOUSEHOLD_AT_HOME_CATEGORY,
+  HOUSEHOLD_SECTION,
+  householdPurchaseState,
+  isSectionCategory,
+  sectionCategory,
+  sectionFromCategory,
+} from "@/lib/sections";
 import type { MealId } from "@/lib/types";
 import { guessSection } from "@/lib/categorize";
 import { capitalize, normalizeKey, parseIngredientLine } from "@/lib/units";
@@ -387,6 +395,24 @@ export async function setHouseholdChecked(input: { id: number; checked: boolean 
   await assertAccess();
   const data = z.object({ id: idSchema, checked: z.boolean() }).parse(input);
   await getDb().update(householdItems).set({ checked: data.checked }).where(eq(householdItems.id, data.id));
+}
+
+export async function setHouseholdAtHome(input: { id: number; atHome: boolean }) {
+  await assertAccess();
+  const { id, atHome } = z.object({ id: idSchema, atHome: z.boolean() }).parse(input);
+  const [item] = await getDb()
+    .update(householdItems)
+    .set(householdPurchaseState(atHome))
+    .where(and(
+      eq(householdItems.id, id),
+      inArray(householdItems.category, [
+        ...legacyHouseholdCategorySchema.options,
+        sectionCategory(HOUSEHOLD_SECTION),
+        HOUSEHOLD_AT_HOME_CATEGORY,
+      ]),
+    ))
+    .returning({ id: householdItems.id });
+  if (!item) throw new Error("No se encontró el producto para la casa.");
 }
 
 export async function removeHouseholdItem(input: { id: number }) {

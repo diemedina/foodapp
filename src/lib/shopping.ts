@@ -1,4 +1,4 @@
-import { sectionDot, sectionFromCategory } from "./sections";
+import { HOUSEHOLD_AT_HOME_CATEGORY, sectionDot, sectionFromCategory } from "./sections";
 import type { HouseholdItem, PlanMap, Recipe } from "./types";
 import { fmtAmount, normalizeKey } from "./units";
 
@@ -16,8 +16,8 @@ export type ShoppingGroup = { section: string; dot: string; items: ShoppingItem[
 
 export type ShoppingList = {
   groups: ShoppingGroup[];
-  /** Ingredientes de la semana que ya hay en casa (no se compran). */
-  atHome: { key: string; name: string; amount: string }[];
+  /** Ingredientes de la semana y productos manuales que ya hay en casa. */
+  atHome: { key: string; name: string; amount: string; manualId?: number }[];
   total: number;
   pending: number;
 };
@@ -93,12 +93,19 @@ export function buildShoppingList(input: {
   };
 
   const all = [...acc.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
-  const atHome = all.filter((a) => pantry.has(a.nameKey)).map((a) => ({ key: a.key, name: a.name, amount: amountOf(a) }));
+  const atHome: ShoppingList["atHome"] = all
+    .filter((a) => pantry.has(a.nameKey))
+    .map((a) => ({ key: a.key, name: a.name, amount: amountOf(a) }));
   const toBuy = all.filter((a) => !pantry.has(a.nameKey));
 
-  const manualItems = input.manualItems ?? [];
   const manualBySection = new Map<string, HouseholdItem[]>();
-  for (const item of manualItems) {
+  let total = toBuy.length;
+  for (const item of input.manualItems ?? []) {
+    if (item.category === HOUSEHOLD_AT_HOME_CATEGORY) {
+      atHome.push({ key: `manual:${item.id}`, name: item.name, amount: "", manualId: item.id });
+      continue;
+    }
+    total++;
     const section = sectionFromCategory(item.category);
     const items = manualBySection.get(section) ?? [];
     items.push(item);
@@ -138,5 +145,5 @@ export function buildShoppingList(input: {
     if (items.length) groups.push({ section, dot: sectionDot(section), items });
   }
 
-  return { groups, atHome, total: toBuy.length + manualItems.length, pending };
+  return { groups, atHome, total, pending };
 }

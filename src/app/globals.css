@@ -114,6 +114,10 @@ textarea:focus {
   animation-duration: 0.38s;
   animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
+/* La barra también tiene una capa propia durante las transiciones. */
+::view-transition-group(bottom-nav) {
+  z-index: 1;
+}
 @keyframes fade-out-quick {
   to { opacity: 0; }
 }
