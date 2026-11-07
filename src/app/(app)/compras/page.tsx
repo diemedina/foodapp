@@ -7,7 +7,6 @@ import { PageTransition } from "@/components/page-transition";
 import { ListSkeleton } from "@/components/skeletons";
 import { shoppingListFor } from "@/lib/app-data";
 import { useAppStore } from "@/lib/app-store";
-import { isSectionCategory } from "@/lib/sections";
 import { dow, rangeText, todayISO } from "@/lib/dates";
 import { ShoppingView } from "./shopping-view";
 
@@ -28,7 +27,6 @@ function ShoppingContent() {
       weekStart={weekStart}
       ranges={data.weeks.map(rangeText)}
       list={shoppingListFor(data, weekStart)}
-      household={data.shopping.household.filter((item) => !isSectionCategory(item.category))}
       sectionOrder={data.shopping.order}
     />
   );

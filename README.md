@@ -90,6 +90,6 @@ En el [panel de Render](https://dashboard.render.com/), elegí **New → Web Ser
 | `ACCESS_CODE` | Código de acceso privado y difícil de adivinar |
 | `APP_TIME_ZONE` | Opcional. Por defecto, `America/Argentina/Buenos_Aires` |
 
-Cargá las variables en **Environment Variables** de Render. El servicio usa el puerto que Render asigna mediante `PORT`. El build descarga Nunito Sans desde Google Fonts. Si la base ya tiene las tablas y los datos de la app, alcanza con configurar la conexión.
+Cargá las variables en **Environment Variables** de Render. El servicio usa el puerto que Render asigna mediante `PORT`. Nunito Sans se incluye en el repositorio. Si la base ya tiene las tablas y los datos de la app, alcanza con configurar la conexión.
 
 Una vez publicado, abrí la URL `onrender.com`, ingresá el código y comprobá que cargue la lista de recetas. En el [plan gratuito de Render](https://render.com/docs/free), el servicio se suspende después de 15 minutos de inactividad y la primera visita puede tardar alrededor de un minuto.

@@ -1,4 +1,4 @@
-import { isSectionCategory, sectionDot, sectionFromCategory } from "./sections";
+import { sectionDot, sectionFromCategory } from "./sections";
 import type { HouseholdItem, PlanMap, Recipe } from "./types";
 import { fmtAmount, normalizeKey } from "./units";
 
@@ -96,13 +96,15 @@ export function buildShoppingList(input: {
   const atHome = all.filter((a) => pantry.has(a.nameKey)).map((a) => ({ key: a.key, name: a.name, amount: amountOf(a) }));
   const toBuy = all.filter((a) => !pantry.has(a.nameKey));
 
-  const manualItems = (input.manualItems ?? []).filter((item) => isSectionCategory(item.category));
-  const sections = [...sectionOrder];
+  const manualItems = input.manualItems ?? [];
+  const manualBySection = new Map<string, HouseholdItem[]>();
   for (const item of manualItems) {
     const section = sectionFromCategory(item.category);
-    if (!sections.includes(section)) sections.push(section);
+    const items = manualBySection.get(section) ?? [];
+    items.push(item);
+    manualBySection.set(section, items);
   }
-  for (const a of toBuy) if (!sections.includes(a.section)) sections.push(a.section);
+  const sections = new Set([...sectionOrder, ...manualBySection.keys(), ...toBuy.map((item) => item.section)]);
 
   let pending = 0;
   const groups: ShoppingGroup[] = [];
@@ -121,7 +123,7 @@ export function buildShoppingList(input: {
           checked,
         };
       });
-    for (const item of manualItems.filter((item) => sectionFromCategory(item.category) === section)) {
+    for (const item of manualBySection.get(section) ?? []) {
       if (!item.checked) pending++;
       items.push({
         key: `manual:${item.id}`,

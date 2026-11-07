@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { Nunito_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import { ToastProvider } from "@/components/toast";
 import "./globals.css";
 
-const nunito = Nunito_Sans({
+const nunito = localFont({
+  src: "./fonts/nunito-sans-latin.woff2",
   variable: "--font-nunito",
-  subsets: ["latin"],
-  weight: ["400", "600", "700", "800", "900"],
+  weight: "200 900",
+  display: "swap",
 });
 
 export const metadata: Metadata = {

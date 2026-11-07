@@ -9,12 +9,11 @@ import { WeekTabs } from "@/components/week-tabs";
 import type { AppData } from "@/lib/app-data";
 import { useAppStore, writeAppData } from "@/lib/app-store";
 import { capitalize, normalizeKey } from "@/lib/units";
-import { HOUSEHOLD_CATEGORIES, householdCategory, isSectionCategory, sectionCategory, sectionDot } from "@/lib/sections";
+import { sectionCategory, sectionDot } from "@/lib/sections";
 import type { ShoppingList } from "@/lib/shopping";
 import type { HouseholdItem } from "@/lib/types";
 import {
   addHouseholdItem,
-  clearBoughtHousehold,
   removeHouseholdItem,
   saveStoreOrder,
   setAtHome,
@@ -41,16 +40,12 @@ export function ShoppingView(props: {
   weekStart: string;
   ranges: string[];
   list: ShoppingList;
-  household: HouseholdItem[];
   sectionOrder: string[];
 }) {
   const { weekStart } = props;
   const toast = useToast();
   const [showOrder, setShowOrder] = useState(false);
   const [editing, setEditing] = useState<{ name: string; section: string } | null>(null);
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState<string>("Limpieza");
-  const householdInputId = useId();
   const sectionInputId = useId();
   const sectionSelectId = useId();
   const [addingSection, setAddingSection] = useState<string | null>(null);
@@ -65,9 +60,8 @@ export function ShoppingView(props: {
     );
 
   const items = state.list.groups.flatMap((g) => g.items);
-  const total = items.length + state.household.length;
-  const done = items.filter((i) => i.checked).length + state.household.filter((h) => h.checked).length;
-  const pending = total - done;
+  const { total, pending } = state.list;
+  const done = total - pending;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
   async function optimistic(update: (shopping: ShoppingData) => ShoppingData, save: () => Promise<unknown>, message?: string) {
@@ -94,10 +88,8 @@ export function ShoppingView(props: {
     if (!value || value.length > 80) return false;
     const key = normalizeKey(value);
     const products = useAppStore.getState().data?.shopping.household ?? [];
-    const ingredientExists = isSectionCategory(selectedCategory) && (
-      items.some((item) => normalizeKey(item.name) === key)
-      || state.list.atHome.some((item) => normalizeKey(item.name) === key)
-    );
+    const ingredientExists = items.some((item) => normalizeKey(item.name) === key)
+      || state.list.atHome.some((item) => normalizeKey(item.name) === key);
     if (!key) return false;
     if (ingredientExists || products.some((item) => normalizeKey(item.name) === key)) {
       toast(`${value} ya estaba en la lista`);
@@ -195,7 +187,7 @@ export function ShoppingView(props: {
       {state.list.groups.map((g) => {
         const left = g.items.filter((i) => !i.checked).length;
         return (
-          <section key={g.section} className="flex flex-col gap-2">
+          <section key={g.section} aria-label={g.section} className="flex flex-col gap-2">
             <div className="flex items-center justify-between px-1.5">
               <h2 className="flex items-center gap-2 text-base font-extrabold">
                 <span className="size-2.5 rounded-full" style={{ background: g.dot }} />
@@ -301,122 +293,6 @@ export function ShoppingView(props: {
           </section>
         );
       })}
-
-      <section className="flex flex-col gap-2" aria-label="Para la casa">
-        <div className="flex items-center justify-between px-1.5">
-          <h2 className="flex items-center gap-2 text-base font-extrabold">
-            <span className="size-2.5 rounded-full bg-[#8FD0E8]" />
-            Para la casa
-          </h2>
-          {state.household.some((h) => h.checked) && (
-            <button
-              type="button"
-              onClick={() => plain(() => clearBoughtHousehold(), "Quitamos lo comprado")}
-              className="h-9 rounded-full px-2.5 text-xs font-bold text-danger"
-            >
-              Quitar comprados
-            </button>
-          )}
-        </div>
-        <div className="glass flex flex-col gap-3 rounded-[24px] p-3.5">
-          <form
-            className="flex gap-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const value = name.trim();
-              if (!value) return;
-              setName("");
-              void addProduct(value, category).then((saved) => {
-                if (!saved) setName((current) => current || value);
-              });
-            }}
-          >
-            <label htmlFor={householdInputId} className="sr-only">
-              Agregar producto para la casa
-            </label>
-            <input
-              id={householdInputId}
-              maxLength={80}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Agregar producto…"
-              className="h-12 min-w-0 flex-1 rounded-full border border-ink/10 bg-white/85 px-4 text-[15px]"
-            />
-            <button type="submit" aria-label="Agregar" className="flex size-12 shrink-0 items-center justify-center rounded-full bg-ink text-white">
-              <PlusIcon />
-            </button>
-          </form>
-          <div role="radiogroup" aria-label="Categoría" className="flex flex-wrap gap-1.5">
-            {HOUSEHOLD_CATEGORIES.map((c) => {
-              const on = category === c.id;
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  onClick={() => setCategory(c.id)}
-                  className="h-9 rounded-full px-3.5 text-[13px] font-semibold"
-                  style={{
-                    background: on ? c.bg : "rgba(255,255,255,0.7)",
-                    color: on ? c.fg : "#1A1A1A",
-                    border: on ? `1px solid ${c.fg}` : "1px solid rgba(26,26,26,0.08)",
-                  }}
-                >
-                  {c.id}
-                </button>
-              );
-            })}
-          </div>
-          {state.household.length > 0 && (
-            <div className="flex flex-col border-t border-ink/5">
-              {state.household.map((h, idx) => {
-                const c = householdCategory(h.category);
-                return (
-                  <div key={h.id} className={`flex items-center gap-1 ${idx < state.household.length - 1 ? "border-b border-ink/5" : ""}`}>
-                    <button
-                      type="button"
-                      role="checkbox"
-                      aria-checked={h.checked}
-                      disabled={h.id < 0}
-                      onClick={() =>
-                        optimistic(
-                          (shopping) => ({
-                            ...shopping,
-                            household: shopping.household.map((item) => item.id === h.id ? { ...item, checked: !h.checked } : item),
-                          }),
-                          () => setHouseholdChecked({ id: h.id, checked: !h.checked }),
-                        )
-                      }
-                      className="flex min-h-14 min-w-0 flex-1 items-center gap-3 px-0.5 py-2 text-left active:scale-100"
-                    >
-                      <CheckCircle checked={h.checked} />
-                      <span className={`min-w-0 flex-1 text-[15px] font-semibold ${h.checked ? "line-through opacity-50" : ""}`}>
-                        {h.name}
-                      </span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${h.checked ? "opacity-50" : ""}`}
-                        style={{ background: c.bg, color: c.fg }}
-                      >
-                        {h.category}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      aria-label={`Quitar ${h.name}`}
-                      disabled={h.id < 0}
-                      onClick={() => plain(() => removeHouseholdItem({ id: h.id }), `${h.name} quitado`)}
-                      className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted"
-                    >
-                      <CloseIcon className="size-4" />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </section>
 
       {state.list.atHome.length > 0 && (
         <section className="flex flex-col gap-2" aria-label="Ya tenés en casa">

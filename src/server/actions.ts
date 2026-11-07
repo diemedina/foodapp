@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, inArray, notLike, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -22,7 +22,7 @@ import {
 import { dow, isISODate } from "@/lib/dates";
 import { MEAL_IDS, parseSlotKey, sortMeals } from "@/lib/meals";
 import { autofillPlan } from "@/lib/planning";
-import { DEFAULT_SECTIONS, HOUSEHOLD_CATEGORIES, isSectionCategory, sectionFromCategory } from "@/lib/sections";
+import { DEFAULT_SECTIONS, isSectionCategory, sectionFromCategory } from "@/lib/sections";
 import type { MealId } from "@/lib/types";
 import { guessSection } from "@/lib/categorize";
 import { capitalize, normalizeKey, parseIngredientLine } from "@/lib/units";
@@ -349,7 +349,7 @@ export async function setIngredientSection(input: { name: string; section: strin
   if (ids.length) await db.update(ingredients).set({ section: data.section }).where(inArray(ingredients.id, ids));
 }
 
-const categorySchema = z.enum(HOUSEHOLD_CATEGORIES.map((c) => c.id) as [string, ...string[]]);
+const legacyHouseholdCategorySchema = z.enum(["Limpieza", "Higiene", "Hogar", "Otros"]);
 
 export async function addHouseholdItem(input: { name: string; category: string }) {
   await assertAccess();
@@ -361,7 +361,7 @@ export async function addHouseholdItem(input: { name: string; category: string }
     const sections = await getStoreOrder();
     if (!sections.includes(sectionFromCategory(data.category))) throw new Error("Sección desconocida.");
   } else {
-    categorySchema.parse(data.category);
+    legacyHouseholdCategorySchema.parse(data.category);
   }
   const db = getDb();
   const columns = {
@@ -393,13 +393,6 @@ export async function removeHouseholdItem(input: { id: number }) {
   await assertAccess();
   const { id } = z.object({ id: idSchema }).parse(input);
   await getDb().delete(householdItems).where(eq(householdItems.id, id));
-}
-
-export async function clearBoughtHousehold() {
-  await assertAccess();
-  await getDb().delete(householdItems).where(
-    and(eq(householdItems.checked, true), notLike(householdItems.category, "section:%")),
-  );
 }
 
 export async function saveStoreOrder(input: { sections: string[] }) {
