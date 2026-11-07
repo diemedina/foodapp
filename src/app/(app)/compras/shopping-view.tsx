@@ -250,15 +250,7 @@ export function ShoppingView(props: {
                         <span className={`text-[15px] font-semibold ${it.checked ? "line-through" : ""}`}>{it.name}</span>
                         {it.recipes.length > 0 && <span className="truncate text-xs text-muted">{it.recipes.join(", ")}</span>}
                       </span>
-                      {it.recipeCount > 1 && (
-                        <span
-                          aria-label={`${it.recipeCount} recetas`}
-                          className={`flex shrink-0 items-center gap-1 rounded-full bg-white/75 px-2.5 py-1 text-[13px] font-bold ${it.checked ? "opacity-50" : ""}`}
-                        >
-                          <BookIcon aria-hidden className="size-4" />
-                          {it.recipeCount}
-                        </span>
-                      )}
+                      <RecipeCountBadge count={it.recipeCount} checked={it.checked} />
                     </button>
                     {(manualId === undefined || g.section === HOUSEHOLD_SECTION) && (
                       <button
@@ -322,10 +314,9 @@ export function ShoppingView(props: {
               <div key={p.key} className={`flex min-h-[52px] items-center gap-2.5 py-1 pl-2 pr-1 ${idx ? "border-t border-green-800/10" : ""}`}>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="text-sm font-bold">{p.name}</span>
-                  {p.manualId === undefined && (
-                    <span className="text-xs text-[#4A5A4E]">{p.amount ? `${p.amount} para la semana` : "Sin cantidad cargada"}</span>
-                  )}
+                  {p.recipes.length > 0 && <span className="truncate text-xs text-muted">{p.recipes.join(", ")}</span>}
                 </span>
+                <RecipeCountBadge count={p.recipeCount} />
                 <button
                   type="button"
                   aria-label={`Lo necesito: ${p.name}`}
@@ -404,6 +395,19 @@ export function ShoppingView(props: {
         }}
       />
     </>
+  );
+}
+
+function RecipeCountBadge({ count, checked = false }: { count: number; checked?: boolean }) {
+  if (count < 2) return null;
+  return (
+    <span
+      aria-label={`${count} recetas`}
+      className={`flex shrink-0 items-center gap-1 rounded-full bg-white/75 px-2.5 py-1 text-[13px] font-bold ${checked ? "opacity-50" : ""}`}
+    >
+      <BookIcon aria-hidden className="size-4" />
+      {count}
+    </span>
   );
 }
 

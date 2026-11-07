@@ -1,23 +1,23 @@
 import { HOUSEHOLD_AT_HOME_CATEGORY, sectionDot, sectionFromCategory } from "./sections";
 import type { HouseholdItem, PlanMap, Recipe } from "./types";
-import { fmtAmount, normalizeKey } from "./units";
+import { normalizeKey } from "./units";
 
-export type ShoppingItem = {
+type ShoppingProduct = {
   key: string;
   name: string;
-  amount: string;
   recipes: string[];
   recipeCount: number;
   manualId?: number;
-  checked: boolean;
 };
+
+export type ShoppingItem = ShoppingProduct & { checked: boolean };
 
 export type ShoppingGroup = { section: string; dot: string; items: ShoppingItem[] };
 
 export type ShoppingList = {
   groups: ShoppingGroup[];
   /** Ingredientes de la semana y productos manuales que ya hay en casa. */
-  atHome: { key: string; name: string; amount: string; manualId?: number }[];
+  atHome: ShoppingProduct[];
   total: number;
   pending: number;
 };
@@ -27,16 +27,12 @@ type Acc = {
   name: string;
   nameKey: string;
   section: string;
-  unit: string | null;
-  qty: number;
-  unknown: boolean;
   recipes: string[];
 };
 
 /**
- * Arma la lista de compras de una semana: suma los ingredientes de todas las comidas
- * planificadas (las sobras cuentan, porque se cocina doble), agrupa por sección según
- * el orden del súper y separa lo que ya hay en casa.
+ * Agrupa los ingredientes del plan y los productos manuales según el orden del súper.
+ * Conserva las claves por unidad para reconocer las marcas guardadas.
  */
 export function buildShoppingList(input: {
   plan: PlanMap;
@@ -66,10 +62,9 @@ export function buildShoppingList(input: {
       const key = `${nameKey}|${ing.unit}`;
       let a = acc.get(key);
       if (!a) {
-        a = { key, name: ing.name, nameKey, section: ing.section, unit: ing.unit, qty: 0, unknown: false, recipes: [] };
+        a = { key, name: ing.name, nameKey, section: ing.section, recipes: [] };
         acc.set(key, a);
       }
-      a.qty += ing.qty;
       if (!a.recipes.includes(recipe.name)) a.recipes.push(recipe.name);
     }
   }
@@ -80,29 +75,28 @@ export function buildShoppingList(input: {
     let target = [...acc.values()].find((a) => a.nameKey === nameKey);
     if (!target) {
       const key = `${nameKey}|?`;
-      target = { key, name: ing.name, nameKey, section: ing.section, unit: null, qty: 0, unknown: false, recipes: [] };
+      target = { key, name: ing.name, nameKey, section: ing.section, recipes: [] };
       acc.set(key, target);
     }
-    target.unknown = true;
     if (!target.recipes.includes(recipe.name)) target.recipes.push(recipe.name);
   }
 
-  const amountOf = (a: Acc) => {
-    const base = a.unit && a.qty > 0 ? fmtAmount(a.qty, a.unit) : "";
-    return base && a.unknown ? `${base} +` : base;
-  };
+  const ingredientProduct = (a: Acc): ShoppingProduct => ({
+    key: a.key,
+    name: a.name,
+    recipes: a.recipes,
+    recipeCount: recipeIdsByIngredient.get(a.nameKey)?.size ?? 0,
+  });
 
   const all = [...acc.values()].sort((a, b) => a.name.localeCompare(b.name, "es"));
-  const atHome: ShoppingList["atHome"] = all
-    .filter((a) => pantry.has(a.nameKey))
-    .map((a) => ({ key: a.key, name: a.name, amount: amountOf(a) }));
+  const atHome = all.filter((a) => pantry.has(a.nameKey)).map(ingredientProduct);
   const toBuy = all.filter((a) => !pantry.has(a.nameKey));
 
   const manualBySection = new Map<string, HouseholdItem[]>();
   let total = toBuy.length;
   for (const item of input.manualItems ?? []) {
     if (item.category === HOUSEHOLD_AT_HOME_CATEGORY) {
-      atHome.push({ key: `manual:${item.id}`, name: item.name, amount: "", manualId: item.id });
+      atHome.push(manualProduct(item));
       continue;
     }
     total++;
@@ -121,29 +115,24 @@ export function buildShoppingList(input: {
       .map((a) => {
         const checked = checks.has(a.key);
         if (!checked) pending++;
-        return {
-          key: a.key,
-          name: a.name,
-          amount: amountOf(a),
-          recipes: a.recipes,
-          recipeCount: recipeIdsByIngredient.get(a.nameKey)?.size ?? 0,
-          checked,
-        };
+        return { ...ingredientProduct(a), checked };
       });
     for (const item of manualBySection.get(section) ?? []) {
       if (!item.checked) pending++;
-      items.push({
-        key: `manual:${item.id}`,
-        manualId: item.id,
-        name: item.name,
-        amount: "",
-        recipes: [],
-        recipeCount: 0,
-        checked: item.checked,
-      });
+      items.push({ ...manualProduct(item), checked: item.checked });
     }
     if (items.length) groups.push({ section, dot: sectionDot(section), items });
   }
 
   return { groups, atHome, total, pending };
+}
+
+function manualProduct(item: HouseholdItem): ShoppingProduct {
+  return {
+    key: `manual:${item.id}`,
+    manualId: item.id,
+    name: item.name,
+    recipes: [],
+    recipeCount: 0,
+  };
 }
