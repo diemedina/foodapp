@@ -1,7 +1,7 @@
 export const HOUSEHOLD_SECTION = "Para la casa";
 
 export const DEFAULT_SECTIONS = [
-  "Verdulería", "Carnicería", "Lácteos y huevos", "Panadería", "Almacén", "Otros", HOUSEHOLD_SECTION,
+  "Verdulería", "Carnicería", "Lácteos y huevos", "Panadería", "Almacén", "Dietetica", "Otros", HOUSEHOLD_SECTION,
 ];
 
 export const SECTION_DOT: Record<string, string> = {
@@ -10,6 +10,7 @@ export const SECTION_DOT: Record<string, string> = {
   "Lácteos y huevos": "#9FC3EE",
   Panadería: "#F2C98A",
   Almacén: "#FFAD57",
+  Dietetica: "#C8B8F2",
   Otros: "#C9BCAD",
   [HOUSEHOLD_SECTION]: "#8FD0E8",
 };
