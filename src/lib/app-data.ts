@@ -23,5 +23,6 @@ export function shoppingListFor(data: AppData, week: string) {
     pantry: new Set(data.shopping.pantry),
     checks: new Set(data.shopping.checks[week]),
     sectionOrder: data.shopping.order,
+    manualItems: data.shopping.household,
   });
 }

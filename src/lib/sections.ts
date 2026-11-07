@@ -25,3 +25,16 @@ export const HOUSEHOLD_CATEGORIES = [
 export function householdCategory(id: string) {
   return HOUSEHOLD_CATEGORIES.find((c) => c.id === id) ?? HOUSEHOLD_CATEGORIES[3];
 }
+
+/** Distingue los productos agregados al súper de las categorías de la casa, incluido "Otros". */
+export function sectionCategory(section: string) {
+  return `section:${section}`;
+}
+
+export function isSectionCategory(category: string) {
+  return category.startsWith("section:");
+}
+
+export function sectionFromCategory(category: string) {
+  return category.slice("section:".length);
+}

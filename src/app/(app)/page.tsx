@@ -7,6 +7,7 @@ import { shoppingListFor } from "@/lib/app-data";
 import { useAppStore } from "@/lib/app-store";
 import { dow, hourNow, longDate, rangeText, todayISO } from "@/lib/dates";
 import { mealForHour } from "@/lib/meals";
+import { isSectionCategory } from "@/lib/sections";
 import { plannedCount } from "@/lib/planning";
 import { TodayView } from "./today-view";
 
@@ -21,7 +22,7 @@ function TodayContent() {
   const [weekStart, nextWeekStart] = data.weeks;
   const plan = data.plans[weekStart];
   const shopping = shoppingListFor(data, lateWeek ? nextWeekStart : weekStart);
-  const pendingHousehold = data.shopping.household.filter((item) => !item.checked).length;
+  const pendingHousehold = data.shopping.household.filter((item) => !isSectionCategory(item.category) && !item.checked).length;
 
   return (
     <TodayView

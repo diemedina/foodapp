@@ -2,14 +2,14 @@
 
 import { useId, useState, useTransition } from "react";
 import { CheckCircle } from "@/components/check-circle";
-import { BagIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, DotsIcon, HomeIcon, PlusIcon, SortIcon } from "@/components/icons";
+import { BagIcon, BookIcon, ChevronDownIcon, ChevronUpIcon, CloseIcon, DotsIcon, HomeIcon, PlusIcon, SortIcon } from "@/components/icons";
 import { Sheet } from "@/components/sheet";
 import { buzz, useToast } from "@/components/toast";
 import { WeekTabs } from "@/components/week-tabs";
 import type { AppData } from "@/lib/app-data";
-import { writeAppData } from "@/lib/app-store";
+import { useAppStore, writeAppData } from "@/lib/app-store";
 import { capitalize, normalizeKey } from "@/lib/units";
-import { HOUSEHOLD_CATEGORIES, householdCategory, sectionDot } from "@/lib/sections";
+import { HOUSEHOLD_CATEGORIES, householdCategory, isSectionCategory, sectionCategory, sectionDot } from "@/lib/sections";
 import type { ShoppingList } from "@/lib/shopping";
 import type { HouseholdItem } from "@/lib/types";
 import {
@@ -51,6 +51,10 @@ export function ShoppingView(props: {
   const [name, setName] = useState("");
   const [category, setCategory] = useState<string>("Limpieza");
   const householdInputId = useId();
+  const sectionInputId = useId();
+  const sectionSelectId = useId();
+  const [addingSection, setAddingSection] = useState<string | null>(null);
+  const [sectionName, setSectionName] = useState("");
 
   const state = props;
   const markAtHome = (name: string, atHome: boolean) =>
@@ -85,33 +89,39 @@ export function ShoppingView(props: {
     }
   }
 
-  async function addProduct() {
-    const value = name.trim();
-    if (!value || value.length > 80) return;
+  async function addProduct(value: string, selectedCategory: string) {
+    value = value.trim();
+    if (!value || value.length > 80) return false;
     const key = normalizeKey(value);
-    if (state.household.some((item) => normalizeKey(item.name) === key)) {
+    const products = useAppStore.getState().data?.shopping.household ?? [];
+    const ingredientExists = isSectionCategory(selectedCategory) && (
+      items.some((item) => normalizeKey(item.name) === key)
+      || state.list.atHome.some((item) => normalizeKey(item.name) === key)
+    );
+    if (!key) return false;
+    if (ingredientExists || products.some((item) => normalizeKey(item.name) === key)) {
       toast(`${value} ya estaba en la lista`);
-      return;
+      return true;
     }
 
-    const product = { id: nextTemporaryId--, name: capitalize(value), category, checked: false };
+    const product = { id: nextTemporaryId--, name: capitalize(value), category: selectedCategory, checked: false };
     const withProduct = (item: HouseholdItem) => shoppingPatch((shopping) => (
       shopping.household.some((existing) => existing.id === item.id || normalizeKey(existing.name) === key)
         ? shopping
         : { ...shopping, household: [...shopping.household, item] }
     ));
 
-    setName("");
     try {
       const result = await writeAppData(
-        () => addHouseholdItem({ name: value, category }),
+        () => addHouseholdItem({ name: value, category: selectedCategory }),
         withProduct(product),
         (data, saved) => withProduct(saved.item)(data),
       );
       toast(result.added ? `${value} agregado a la lista` : `${value} ya estaba en la lista`);
+      return true;
     } catch {
-      setName((current) => current || value);
       toast("No se pudo agregar el producto.", "error");
+      return false;
     }
   }
 
@@ -167,9 +177,18 @@ export function ShoppingView(props: {
         </div>
       </div>
 
+      <button
+        type="button"
+        onClick={() => setAddingSection(props.sectionOrder[0] ?? "Otros")}
+        className="pressable glass flex h-12 items-center justify-center gap-2 rounded-full text-sm font-bold"
+      >
+        <PlusIcon className="size-[18px]" />
+        Agregar producto
+      </button>
+
       {state.list.groups.length === 0 && state.list.atHome.length === 0 && (
         <p className="glass rounded-[24px] px-5 py-6 text-center text-muted">
-          No hay comidas planificadas para esta semana. Elegí recetas en Semana y los ingredientes aparecen acá.
+          Tu lista está vacía. Agregá productos o elegí recetas en Semana para sumar sus ingredientes.
         </p>
       )}
 
@@ -182,91 +201,106 @@ export function ShoppingView(props: {
                 <span className="size-2.5 rounded-full" style={{ background: g.dot }} />
                 {g.section}
               </h2>
-              <span className="text-xs font-semibold text-muted">{left === 0 ? "Listo" : `${left} de ${g.items.length}`}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-muted">{left === 0 ? "Listo" : `${left} de ${g.items.length}`}</span>
+                <button
+                  type="button"
+                  aria-label={`Agregar producto a ${g.section}`}
+                  onClick={() => setAddingSection(g.section)}
+                  className="glass flex size-11 items-center justify-center rounded-full"
+                >
+                  <PlusIcon className="size-[18px]" />
+                </button>
+              </div>
             </div>
             <div className="glass rounded-[24px] px-2 py-1">
-              {g.items.map((it, idx) => (
-                <div key={it.key} className={`flex items-center ${idx ? "border-t border-ink/5" : ""}`}>
-                  <button
-                    type="button"
-                    role="checkbox"
-                    aria-checked={it.checked}
-                    onClick={() =>
-                      optimistic(
-                        (shopping) => ({
-                          ...shopping,
-                          checks: {
-                            ...shopping.checks,
-                            [weekStart]: toggle(shopping.checks[weekStart] ?? [], it.key, !it.checked),
-                          },
-                        }),
-                        () => setChecked({ weekStart, itemKey: it.key, checked: !it.checked }),
-                      )
-                    }
-                    className="flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2.5 pl-2 pr-1 text-left active:scale-100"
-                  >
-                    <CheckCircle checked={it.checked} />
-                    <span className={`flex min-w-0 flex-1 flex-col ${it.checked ? "opacity-50" : ""}`}>
-                      <span className={`text-[15px] font-semibold ${it.checked ? "line-through" : ""}`}>{it.name}</span>
-                      <span className="truncate text-xs text-muted">{it.recipes.join(", ")}</span>
-                    </span>
-                    {it.amount && (
-                      <span className={`whitespace-nowrap rounded-full bg-white/75 px-2.5 py-1 text-[13px] font-bold ${it.checked ? "opacity-50" : ""}`}>
-                        {it.amount}
+              {g.items.map((it, idx) => {
+                const manualId = it.manualId;
+                return (
+                  <div key={it.key} className={`flex items-center ${idx ? "border-t border-ink/5" : ""}`}>
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={it.checked}
+                      disabled={manualId !== undefined && manualId < 0}
+                      onClick={() =>
+                        optimistic(
+                          (shopping) => ({
+                            ...shopping,
+                            checks: manualId === undefined ? {
+                              ...shopping.checks,
+                              [weekStart]: toggle(shopping.checks[weekStart] ?? [], it.key, !it.checked),
+                            } : shopping.checks,
+                            household: shopping.household.map((item) =>
+                              item.id === manualId ? { ...item, checked: !it.checked } : item,
+                            ),
+                          }),
+                          () => manualId === undefined
+                            ? setChecked({ weekStart, itemKey: it.key, checked: !it.checked })
+                            : setHouseholdChecked({ id: manualId, checked: !it.checked }),
+                        )
+                      }
+                      className="flex min-h-[62px] min-w-0 flex-1 items-center gap-3 py-2.5 pl-2 pr-1 text-left active:scale-100"
+                    >
+                      <CheckCircle checked={it.checked} />
+                      <span className={`flex min-w-0 flex-1 flex-col ${it.checked ? "opacity-50" : ""}`}>
+                        <span className={`text-[15px] font-semibold ${it.checked ? "line-through" : ""}`}>{it.name}</span>
+                        {it.recipes.length > 0 && <span className="truncate text-xs text-muted">{it.recipes.join(", ")}</span>}
                       </span>
+                      {it.recipeCount > 1 && (
+                        <span
+                          aria-label={`${it.recipeCount} recetas`}
+                          className={`flex shrink-0 items-center gap-1 rounded-full bg-white/75 px-2.5 py-1 text-[13px] font-bold ${it.checked ? "opacity-50" : ""}`}
+                        >
+                          <BookIcon aria-hidden className="size-4" />
+                          {it.recipeCount}
+                        </span>
+                      )}
+                    </button>
+                    {manualId === undefined ? (
+                      <>
+                        <button
+                          type="button"
+                          aria-label={`Ya tengo ${it.name} en casa`}
+                          onClick={() => markAtHome(it.name, true)}
+                          className="flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
+                        >
+                          <HomeIcon className="size-[18px]" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Cambiar sección de ${it.name}`}
+                          onClick={() => setEditing({ name: it.name, section: g.section })}
+                          className="-ml-1.5 flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
+                        >
+                          <DotsIcon className="size-5" />
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        aria-label={`Quitar ${it.name}`}
+                        disabled={manualId < 0}
+                        onClick={() => optimistic(
+                          (shopping) => ({
+                            ...shopping,
+                            household: shopping.household.filter((item) => item.id !== manualId),
+                          }),
+                          () => removeHouseholdItem({ id: manualId }),
+                          `${it.name} quitado`,
+                        )}
+                        className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted"
+                      >
+                        <CloseIcon className="size-4" />
+                      </button>
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Ya tengo ${it.name} en casa`}
-                    onClick={() => markAtHome(it.name, true)}
-                    className="flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
-                  >
-                    <HomeIcon className="size-[18px]" />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Cambiar sección de ${it.name}`}
-                    onClick={() => setEditing({ name: it.name, section: g.section })}
-                    className="-ml-1.5 flex size-11 shrink-0 items-center justify-center rounded-full text-subtle"
-                  >
-                    <DotsIcon className="size-5" />
-                  </button>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           </section>
         );
       })}
-
-      {state.list.atHome.length > 0 && (
-        <section className="flex flex-col gap-2" aria-label="Ya tenés en casa">
-          <div className="flex items-center justify-between px-1.5">
-            <h2 className="flex items-center gap-2 text-base font-extrabold">
-              <HomeIcon className="size-4 text-green-800" strokeWidth={2.2} />
-              Ya tenés en casa
-            </h2>
-            <span className="text-xs font-semibold text-muted">No se compran</span>
-          </div>
-          <div className="rounded-[24px] border border-dashed border-green-800/30 bg-green-200/55 px-2 py-1.5">
-            {state.list.atHome.map((p, idx) => (
-              <div key={p.key} className={`flex min-h-[52px] items-center gap-2.5 py-1 pl-2 pr-1 ${idx ? "border-t border-green-800/10" : ""}`}>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="text-sm font-bold">{p.name}</span>
-                  <span className="text-xs text-[#4A5A4E]">{p.amount ? `${p.amount} para la semana` : "Sin cantidad cargada"}</span>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => markAtHome(p.name, false)}
-                  className="h-10 rounded-full border border-green-800/25 bg-white/80 px-3 text-xs font-extrabold text-green-800"
-                >
-                  Lo necesito
-                </button>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       <section className="flex flex-col gap-2" aria-label="Para la casa">
         <div className="flex items-center justify-between px-1.5">
@@ -289,7 +323,12 @@ export function ShoppingView(props: {
             className="flex gap-2"
             onSubmit={(e) => {
               e.preventDefault();
-              void addProduct();
+              const value = name.trim();
+              if (!value) return;
+              setName("");
+              void addProduct(value, category).then((saved) => {
+                if (!saved) setName((current) => current || value);
+              });
             }}
           >
             <label htmlFor={householdInputId} className="sr-only">
@@ -378,6 +417,80 @@ export function ShoppingView(props: {
           )}
         </div>
       </section>
+
+      {state.list.atHome.length > 0 && (
+        <section className="flex flex-col gap-2" aria-label="Ya tenés en casa">
+          <div className="flex items-center justify-between px-1.5">
+            <h2 className="flex items-center gap-2 text-base font-extrabold">
+              <HomeIcon className="size-4 text-green-800" strokeWidth={2.2} />
+              Ya tenés en casa
+            </h2>
+            <span className="text-xs font-semibold text-muted">No se compran</span>
+          </div>
+          <div className="rounded-[24px] border border-dashed border-green-800/30 bg-green-200/55 px-2 py-1.5">
+            {state.list.atHome.map((p, idx) => (
+              <div key={p.key} className={`flex min-h-[52px] items-center gap-2.5 py-1 pl-2 pr-1 ${idx ? "border-t border-green-800/10" : ""}`}>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="text-sm font-bold">{p.name}</span>
+                  <span className="text-xs text-[#4A5A4E]">{p.amount ? `${p.amount} para la semana` : "Sin cantidad cargada"}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => markAtHome(p.name, false)}
+                  className="h-10 rounded-full border border-green-800/25 bg-white/80 px-3 text-xs font-extrabold text-green-800"
+                >
+                  Lo necesito
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <Sheet open={addingSection !== null} onClose={() => setAddingSection(null)} label="Agregar producto">
+        <h2 className="text-[22px] font-extrabold tracking-tight">Agregar producto</h2>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const value = sectionName.trim();
+            const section = addingSection;
+            if (!value || !section) return;
+            setSectionName("");
+            setAddingSection(null);
+            void addProduct(value, sectionCategory(section)).then((saved) => {
+              if (!saved) {
+                setSectionName((current) => current || value);
+                setAddingSection((current) => current ?? section);
+              }
+            });
+          }}
+        >
+          <label htmlFor={sectionInputId} className="text-[13px] font-semibold">Producto</label>
+          <input
+            id={sectionInputId}
+            required
+            autoFocus
+            maxLength={80}
+            value={sectionName}
+            onChange={(event) => setSectionName(event.target.value)}
+            placeholder="Ej. Manzanas"
+            className="h-12 rounded-[18px] border border-ink/10 bg-white/85 px-4"
+          />
+          <label htmlFor={sectionSelectId} className="text-[13px] font-semibold">Categoría</label>
+          <select
+            id={sectionSelectId}
+            value={addingSection ?? ""}
+            onChange={(event) => setAddingSection(event.target.value)}
+            className="h-12 rounded-[18px] border border-ink/10 bg-white/85 px-4"
+          >
+            {props.sectionOrder.map((section) => <option key={section} value={section}>{section}</option>)}
+          </select>
+          <button type="submit" className="h-[52px] rounded-full bg-ink text-sm font-bold text-white">
+            Agregar
+          </button>
+        </form>
+      </Sheet>
 
       <OrderSheet
         key={JSON.stringify(props.sectionOrder)}
